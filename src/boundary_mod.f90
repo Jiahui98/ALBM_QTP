@@ -66,7 +66,7 @@ contains
       m_surfData%RH = m_airRH(nt)
       m_surfData%wind = max(m_airWind(nt), 0.1)
       m_surfData%rainfall = max(0.0, m_airPr(nt)-m_airPrsn(nt))
-      m_surfData%snowfall = max(0.0, Roul/Roun*m_airPrsn(nt))
+      m_surfData%snowfall = max(0.0, Roul/Roun*min(m_airPrsn(nt),m_airPr(nt))) ! changed by Lin
       m_surfData%pressure = m_airPs(nt) 
       m_surfData%sw = m_airSWRad(nt)
       m_surfData%lw = m_airLWRad(nt) 
@@ -81,6 +81,7 @@ contains
       m_surfData%SRPQsi = m_SRPQsi(nday)
       m_surfData%DOQsi = m_DOQsi(nday) 
       m_radPars%qCO2 = m_aCO2(nyr)
+      m_radPars%qCH4 = m_aCH4(nyr)
       m_radPars%AbO3 = m_aO3(nmon)
       m_radPars%tau550 = m_aAOD(nmon)
 
@@ -94,13 +95,13 @@ contains
       m_radPars%month = month
       m_radPars%day = day
       if (m_radPars%Latit>=0) then
-         if (month>=3 .and. month<=8) then
+         if (month>=4 .and. month<=9) then     ! Lin has changed the range
             m_radPars%season = 1
          else
             m_radPars%season = 0
          end if
       else
-         if (month>=3 .and. month<=8) then
+         if (month>=4 .and. month<=9) then
             m_radPars%season = 0
          else
             m_radPars%season = 1
@@ -120,14 +121,15 @@ contains
    subroutine GetSolarConditions(hindx) 
       implicit none
       integer(i8), intent(in) :: hindx
-      real(r8) :: LPOC(NPOC), Chla(NPOC)
-      real(r8) :: PPOC, MPOC, DPOC, trDOC, rhour
+      real(r8) :: LPOC, Chla
+      real(r8) :: MPOC, DPOC, trDOC, rhour    ! Lin has deleted PPOC
       real(r8) :: hour, dzi, dzw, zcos, rBsc
       real(r8) :: Iab0, Iab1, zenith, srd_daily
       real(r8) :: tcc, tair
       real(r8), save :: rTot = 0.0_r8
       integer :: ii
-
+    !  real(r8) :: transtot       ! %
+     
       if (m_surfData%sw<e8) then
          m_fsphot = 0.0_r8
          m_Iab = 0.0_r8
@@ -173,22 +175,28 @@ contains
       if (m_Hsnow>e8) then
          ! correct for snow reflection
          tair = m_surfData%temp
-         call CorrIrradianceForSnow(zenith, tair, fgphot, frdif, zcos)
+         call CorrIrradianceForSnow(m_Hsnow, zenith, tair, fgphot, frdif, zcos) !added m_Hsnow by Lin, 20240222
+ !        call CalcTransmissivity(m_wvln, m_Hsnow, fgphot)
+ !        transtot = 0.35*exp(-m_Hsnow/0.64)+0.034 ! added by Lin
       else if (m_Hgrayice>e8) then
          ! correct for gray ice reflection
          call CorrIrradianceForIce(zenith, Rfre, Alphae, fgphot, frdif, zcos)
+ !        transtot = 0.38 ! added by Lin
+ !        call CalcTransmissivity(m_wvln, m_Hsnow, fgphot) ! added by Lin
       else if (m_Hice>e8) then
          ! correct for ice reflection
          call CorrIrradianceForIce(zenith, Rfri, Alphai, fgphot, frdif, zcos)
+ !        transtot = 1.0 ! added by Lin
       else
          ! correct for water reflection
          call CorrIrradianceByReflection(zenith, Rfrw, fgphot, frdif, zcos)
+ !        transtot = 1.0 ! added by Lin 
       end if
       call GetIncidentSRD(m_wvln, fgphot, m_surfData%srd)
 
       ! correct for snow and gray ice absorption
       if (m_Hsnow>e8 .or. m_Hgrayice>e8) then
-         fgphot = fgphot * exp(-abN*m_Hsnow-abE*m_Hgrayice)   
+         fgphot = fgphot * exp(-abN*m_Hsnow-abE*m_Hgrayice)  
       end if
       call GetIncidentSRD(m_wvln, fgphot, Iab0)
 
@@ -200,14 +208,14 @@ contains
          dzw = m_dZw(ii) - dzi
          if (m_waterIce(ii)<1.0) then
             ! absorption and scattering coefficients
-            LPOC = m_waterPOC(:,ii)
+            LPOC = m_waterPOC(ii)
             DPOC = 0.0_r8  ! dead phytoplankton biomass
             ! if DPOC included, 0.5 should be replace by the fraction of
             ! small and large phytoplankton biomass fraction
-            PPOC = LPOC(small_ppk) + DPOC * 0.5
-            MPOC = LPOC(large_ppk) + DPOC * 0.5
+            !PPOC = LPOC(small_ppk) + DPOC * 0.5   ! deleted by Lin
+            MPOC = LPOC + DPOC! * 0.5
             trDOC = m_waterSubCon(Wtrdoc,ii)
-            Chla = m_chla(:,ii)
+            Chla = m_chla(ii) ! changed according to ALBM-update 
             !call CalcAcCDOM(lake_info%itype, trDOC, m_wvln, abCDOM) 
             !call CalcAcAlgae(LPOC, Chla, m_wvln, mem_pico, mem_micro, abAP)
             ! irradiance attenuation
@@ -218,9 +226,9 @@ contains
          call GetIncidentSRD(m_wvln, fgphot, Iab1)
          m_Iab(ii) = Iab0 - Iab1
          Iab0 = Iab1
-         if (m_Hice>0.2 .and. m_waterIce(ii)<e8) then
-            m_Iab(ii) = 0.0_r8
-         end if
+         !if (m_Hice>0.2 .and. m_waterIce(ii)<e8) then
+         !   m_Iab(ii) = 0.0_r8   deleted by Lin, according to Zhang, 2021
+         !end if
          ! absorbed by wet dark sediments
          if (ii==WATER_LAYER+1) then
             m_Iab(ii+1) = 0.92 * Iab0
@@ -300,14 +308,15 @@ contains
       call UpdateSeasonalFlags(time, hindx, year, month, day)
       if (winter_flag==0 .and. prewinter_flag==1) then
          prewinter_flag = winter_flag
-         !m_waterPOC = 5d2 * m_chla / 0.24 
+         !m_rChl2C = 0.24
+         !m_waterPOC = 5d2 * m_chla0 / 0.24 
       else if (winter_flag==1 .and. prewinter_flag==0) then
          prewinter_flag = winter_flag
-         do ii = 1, NPOC, 1
-            rsdl = max(m_sinkPOCPool(ii)-2.5d3, 0.0)
-            m_burialAtCarb = m_burialAtCarb + rsdl
-            m_sinkPOCPool(ii) = 2.5d3
-         end do
+         !do ii = 1, NPOC, 1
+         rsdl = max(m_sinkPOCPool-2.5d3, 0.0)
+         m_burialAtCarb = m_burialAtCarb + rsdl
+         m_sinkPOCPool = 2.5d3
+         !end do
       end if
    end subroutine
 

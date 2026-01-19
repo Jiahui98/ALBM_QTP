@@ -54,7 +54,7 @@ contains
       integer, intent(in) :: lakeId
       real(r8) :: lon, lat, depth, area
       real(r8) :: basin, zalt, excice, kext
-      integer :: thrmkst, hydroconn 
+      integer :: thrmkst, hydroconn, itype!itype added by Lin 
 
       ! read lake file
       call ReadLakeInfoData(lakeId, 'lon', lon)     ! deg
@@ -79,7 +79,9 @@ contains
       lake_info%margin = 0
       lake_info%thrmkst = thrmkst
       lake_info%hydroconn = hydroconn
-      lake_info%itype = temperate_lake
+      !lake_info%itype = temperate_lake
+      call ReadLakeInfoData(lakeId, 'itype', itype)
+      lake_info%itype = itype
       if (kext>0) then
          lake_info%kext = sa_params(Param_Feta) * kext
       else
@@ -212,13 +214,13 @@ contains
       namelist /resolution/ NWLAYER, NSLAYER, NRLAYER 
       namelist /bayesian/ NMAXSAMPLE, sample_range, obs_dir, obs_var, &
                           obs_weight, mc_file, sa_file
-      namelist /radiation/ solar_dir, gas_dir, albedo_dir, co2_file, &
+      namelist /radiation/ solar_dir, gas_dir, albedo_dir, co2_file, ch4_file, &  ! added ch4 by Lin
                            o3_file, aod_file
       namelist /rundata/ forcing_tstep, forcing_dir, hydro_dir, tref_file, & 
                          soc_file, veg_file, wlnd_file, tas_file, &
                          tasmax_file, tasmin_file, hurs_file, ps_file, &
                          pr_file, prsn_file, rsds_file, rlds_file, &
-                         wind_file
+                         wind_file, gw_file
       namelist /archive/ archive_tstep, archive_dir
       namelist /dbg/ DEBUG, RESUBMIT
       
@@ -307,6 +309,9 @@ contains
       if (len_trim(forcing_dir)==0 .and. len_trim(wind_file)==0) then
          call Endrun("Must set either forcing_dir or wind_file")
       end if
+      if (len_trim(forcing_dir)==0 .and. len_trim(gw_file)==0) then
+         call Endrun("Must set either forcing_dir or gw_file")
+      end if
    end subroutine
 
    subroutine BcastSimulationSettings()
@@ -370,6 +375,8 @@ contains
                      MPI_COMM_WORLD, err)
       call MPI_BCAST(co2_file, len(co2_file), MPI_CHARACTER, 0, &
                      MPI_COMM_WORLD, err)
+      call MPI_BCAST(ch4_file, len(ch4_file), MPI_CHARACTER, 0, &
+                     MPI_COMM_WORLD, err)
       call MPI_BCAST(o3_file, len(o3_file), MPI_CHARACTER, 0, &
                      MPI_COMM_WORLD, err)
       call MPI_BCAST(aod_file, len(aod_file), MPI_CHARACTER, 0, &
@@ -409,6 +416,8 @@ contains
                      MPI_COMM_WORLD, err)
       call MPI_BCAST(wind_file, len(wind_file), MPI_CHARACTER, 0, &
                      MPI_COMM_WORLD, err)
+      call MPI_BCAST(gw_file, len(gw_file), MPI_CHARACTER, 0, &
+                     MPI_COMM_WORLD, err)
       ! archive group
       call MPI_BCAST(archive_tstep, len(archive_tstep), MPI_CHARACTER, 0, &
                      MPI_COMM_WORLD, err)
@@ -438,13 +447,13 @@ contains
       namelist /resolution/ NWLAYER, NSLAYER, NRLAYER 
       namelist /bayesian/ NMAXSAMPLE, sample_range, obs_dir, obs_var, &
                           obs_weight, mc_file, sa_file
-      namelist /radiation/ solar_dir, gas_dir, albedo_dir, co2_file, &
+      namelist /radiation/ solar_dir, gas_dir, albedo_dir, co2_file, ch4_file, &
                            o3_file, aod_file
       namelist /rundata/ forcing_tstep, forcing_dir, hydro_dir,  tref_file, &
                          soc_file, veg_file, wlnd_file, tas_file, &
                          tasmax_file, tasmin_file, hurs_file, ps_file, &
                          pr_file, prsn_file, rsds_file, rlds_file, &
-                         wind_file
+                         wind_file, gw_file
       namelist /archive/ archive_tstep, archive_dir
       namelist /dbg/ DEBUG, RESUBMIT
 
@@ -781,7 +790,7 @@ contains
       real(r8), intent(out) :: fcost
       character(len=32) :: fname = "CalcCostfunc4Var0D"
       character(cx) :: fullname, tmpstr, msg
-      real(r8) :: fobs, fobs_std, ferr, fsim
+      real(r8) :: fobs, fobs_std, ferr, fsim ! deleted depth according to ALBM-updated
       integer :: nline, nobs, error, ii, jj
       integer :: nt, date, idx, nrec
 
@@ -798,33 +807,40 @@ contains
       read(fid, "(A512)", iostat=error) tmpstr
       fcost = 0.0_r8
       nobs = 0
+      !print *, nline
       do ii = 1, nline, 1
-         read(unit=fid, fmt=*, iostat=error) date, fobs, fobs_std 
+         read(unit=fid, fmt=*, iostat=error) date, fobs, fobs_std ! deleted depth according to ALBM-updated
          if (error/=0) then
             close(unit=fid)
             write(msg, "(A, I0)") "Reading stops at line ", ii
             call Endrun(fname, trim(msg))
          end if
          if (date<timeHist(1) .or. date>timeHist(nt)) then
+            !print *,'date out'
             cycle 
          end if
-#ifdef USE_INTEL_COMPILER
-         idx = BSEARCHQQ(LOC(date),LOC(timeHist),INT8(nt),SRT$INTEGER4)
-#else
-         idx = 0
-#endif
+         !idx = 0 !BSEARCHQQ(LOC(date),LOC(timeHist),INT8(nt),SRT$INTEGER4)
+         call BinarySearch2(timeHist,date,idx) ! created by Lin, since BSEARCHQQ is not suitable for gfortran
          fsim = 0.0_r8
          nrec = 0
          do jj = max(1,idx-24*ntday), min(nt,idx+24*ntday), 1
+            !print *,'CalculatingCostfunction,jj=',jj
+            !print *,'ntday=',ntday,'abs(timeHist(',jj,')-date=',abs(timeHist(jj)-date)
             if (abs(timeHist(jj)-date)<ntday) then
                fsim = fsim + varHist(jj)
                nrec = nrec + 1
+               !print *,'fsim=',fsim,'nrec=',nrec
             end if
          end do
+         !if (ii == nline - 1) then
+             !print *,ii,timeHist(jj),date
+         !end if
          ferr = max( 0.01*fobs_std*fobs, std )
          fcost = fcost + ((fobs-fsim/DBLE(nrec)) / ferr)**2
          nobs = nobs + 1
+         !print *,'nobs=',nobs,'ferr=',ferr,'fcost=',fcost 
       end do
+      !print *,'nobs=',nobs,'fcost=',fcost
       close(unit=fid)
       fcost = fcost / DBLE(nobs)
    end subroutine
@@ -848,9 +864,13 @@ contains
       integer :: nt, nz, date, idx, nrec
       integer :: iz1, iz2 
 
+      !print *,'Calculating Costfunc4Var1D'
+      !print *,'filename=',filename,'ntday=',ntday     
       nt = size(timeHist)
       nz = size(depthHist,1)
+      !print *,'nt=',nt,'nz=',nz
       call GetFullFileName(filename, fullname)
+      !print *,'fullname=',fullname
       open(unit=fid, file=trim(fullname), status="old", action="read", &
            iostat=error)
       if (error/=0) then
@@ -862,31 +882,37 @@ contains
       read(fid, "(A512)", iostat=error) tmpstr
       fcost = 0.0_r8
       nobs = 0
+      !print *,'nline=',nline
       do ii = 1, nline, 1
          read(unit=fid, fmt=*, iostat=error) date, depth, fobs, fobs_std
+         !print *,'date=',date
+         !print *,'depth=',depth
+         !print *,'fobs=',fobs
          if (error/=0) then
             close(unit=fid)
             write(msg, "(A, I0)") "Reading stops at line ", ii
             call Endrun(fname, trim(msg))
          end if
          if (date<timeHist(1) .or. date>timeHist(nt)) then
+            print *,'cut'
             cycle
-         end if
-#ifdef USE_INTEL_COMPILER
-         idx = BSEARCHQQ(LOC(date),LOC(timeHist),INT8(nt),SRT$INTEGER4)
-#else
-         idx = 0
-#endif
+        end if
+         !idx = 0 !BSEARCHQQ(LOC(date),LOC(timeHist),INT8(nt),SRT$INTEGER4)
+         call BinarySearch2(timeHist,date,idx) ! created by Lin, since BSEARCHQQ is not suitable for gfortran)
+         !print *,'idx passed.'
          if (depth<=depthHist(1,idx)) then
+            !print *,'depth<=depthHist(1,idx)'
             iz1 = 1
             iz2 = 1
             par = 0.0_r8
          else if (depth>=depthHist(nz,idx)) then
+            !print *,'depth>=depthHist(nz,idx)'
             iz1 = nz
             iz2 = nz
             par = 0.0_r8
          else
             call BinarySearch(depthHist(:,idx), depth, iz1)
+            !print *,'BinarySearch completed'
             iz2 = iz1 + 1
             z1 = depthHist(iz1,idx)
             z2 = depthHist(iz2,idx)
@@ -946,11 +972,8 @@ contains
          if (date<timeHist(1) .or. date>timeHist(nt)) then
             cycle
          end if
-#ifdef USE_INTEL_COMPILER
-         idx = BSEARCHQQ(LOC(date),LOC(timeHist),INT8(nt),SRT$INTEGER4)
-#else
-         idx = 0
-#endif
+         !idx = 0 !BSEARCHQQ(LOC(date),LOC(timeHist),INT8(nt),SRT$INTEGER4)
+         call BinarySearch2(timeHist,date,idx) ! created by Lin, since BSEARCHQQ is not suitable for gfortran
          fsim = varHist(idx) 
          ferr = max( 0.01*fobs_std*fobs, std )
          fcost = fcost + ((fobs-fsim) / ferr)**2
@@ -1005,11 +1028,7 @@ contains
             cycle
          end if
          depth = 2.0 * secchi
-#ifdef USE_INTEL_COMPILER
-         idx = BSEARCHQQ(LOC(date),LOC(timeHist),INT8(nt),SRT$INTEGER4)
-#else
-         idx = 0
-#endif
+         idx = 0 !BSEARCHQQ(LOC(date),LOC(timeHist),INT8(nt),SRT$INTEGER4)
          if (depth>=depthHist(nz,idx)) then
             iz2 = nz
          else
@@ -1153,10 +1172,9 @@ contains
       end if
    end subroutine
 
-   subroutine ReadSiteTSData(info, rdir, time, tstep, varname, odata)
+   subroutine ReadSiteTSData(info, time, tstep, varname, odata)
       implicit none
       type(LakeInfo), intent(in) :: info
-      character(len=*), intent(in) :: rdir
       type(SimTime), intent(in) :: time
       character(len=*), intent(in) :: tstep
       character(len=*), intent(in) :: varname
@@ -1172,9 +1190,9 @@ contains
 
       ! inquire data info
       if (len_trim(lakeid_file)==0) then
-         write(filename, "(A,I0,A)") trim(rdir), info%id, '.nc'
+         write(filename, "(A,I0,A)") trim(forcing_dir), info%id, '.nc'
       else
-         filename = trim(rdir) // trim(info%name) // '.nc'
+         filename = trim(forcing_dir) // trim(info%name) // '.nc'
       end if
       call GetFullFileName(filename, fullname)
       if (trim(run_mode)=='regular') then
@@ -1280,7 +1298,7 @@ contains
       call check( fname, nf90mpi_inq_varid(ncid, trim(varname), varid) )
       call check( fname, nf90mpi_get_att(ncid, varid, "_FillValue", &
                   filled_val) )
-
+      
       call check( nf90mpi_get_var_all(ncid, date_varid, date, &
                   (/1_i8/), (/1_i8/)) ) 
       if (trim(date_units)=='YYYYMMDD') then
@@ -1308,7 +1326,7 @@ contains
             timeIndx = (/time%year0-year+1, time%year1-time%year0+1/)
          end if
       end if
-
+      
       ntime = timeIndx(2) + timeIndx(1) - 1
       if (timeIndx(1)>0) then
          allocate(tmpArr(1,1,timeIndx(2)))
@@ -1674,8 +1692,9 @@ contains
       nstart = timeIndx(1)
       ncount = timeIndx(2)
       call check( fname, nf90mpi_get_var_all(ncid, varid, odata, &
-                  nstart, ncount) )
-      call check( fname, nf90mpi_close(ncid) )
+                  nstart, ncount) ) 
+      call check(fname, nf90mpi_close(ncid))
+     
       if (DEBUG .and. masterproc) then
          print *, "Read " // trim(varname) // " from " // trim(fullname)
       end if

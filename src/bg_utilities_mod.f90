@@ -9,6 +9,11 @@ module bg_utilities_mod
    use phy_const_mod
    use shr_param_mod
 
+   interface Methanotrophy
+      module procedure MethanotrophyInWater
+      module procedure MethanotrophyInSed
+   end interface   
+
 contains
    !------------------------------------------------------------------------------
    !  
@@ -152,7 +157,7 @@ contains
          2.39d+5,1.46d+5,9.37d+4,6.13d+4,4.25d+4,3.25d+4,2.69d+4,2.42d+4, &
          2.28d+4,2.45d+4,2.71d+4,3.05d+4,3.39d+4,3.76d+4/)
 
-      wvmin = 350.0
+      wvmin = 340.0
       wvmax = 4000.0
       nwvln = size(vwvln)
       do ii = 1, nwvln, 1
@@ -161,11 +166,10 @@ contains
             aI(ii) = aI_data(1)
          else if (wvln>=wvmax) then
             aI(ii) = aI_data(181)
-         else
-            if (wvln<=600) then
-               indx = int((wvln-350)/5) + 1
-               par = (wvln-350-5*(indx-1)) / 5.0
-            else if (wvln<=1000) then
+         else if (wvln<=950) then
+            aI(ii) = 9-7*sin((wvln-240)*Pi/700.0)
+         else   
+            if (wvln<=1000) then
                indx = int((wvln-600)/10) + 51
                par = (wvln-600-10*(indx-51)) / 10.0
             else if (wvln<=2000) then
@@ -284,23 +288,23 @@ contains
    !          Chl2Cmin = 0.036, Chl2Cmax = 1.2
    !
    !------------------------------------------------------------------------------
-   subroutine CalcAcAlgae(LPOC, chla, vwvln, rapico_h, ramicro_h, aAP)
+   subroutine CalcAcAlgae(LPOC, chla, vwvln, ramicro_h, aAP)
       implicit none
-      real(r8), intent(in) :: LPOC(:)        ! living algae biomass (umol C/m3)
-      real(r8), intent(in) :: chla(:)        ! Chla (mg/m3) 
+      real(r8), intent(in) :: LPOC        ! living algae biomass (umol C/m3)
+      real(r8), intent(in) :: chla        ! Chla (mg/m3) 
       real(r8), intent(in) :: vwvln(:)       ! wavelength (nm)
-      real(r8), intent(in) :: rapico_h(:)    ! normalized highlight Apico
+      !real(r8), intent(in) :: rapico_h(:)    ! normalized highlight Apico
       real(r8), intent(in) :: ramicro_h(:)   ! normalized highlight Amicro
       real(r8), intent(out) :: aAP(:)        ! absorption coefficient (m-1)
       real(r8), parameter :: wvmin = 400.0
       real(r8), parameter :: wvmax = 700.0
       real(r8), parameter :: dwv = 2.0
-      real(r8) :: wvln, par, rChl2C(NPOC)
-      real(r8) :: apico_h, apico_l, amicro_h, amicro_l
-      real(r8) :: apico, amicro, qChl2C1, qChl2C2
+      real(r8) :: wvln, par, rChl2C
+      real(r8) :: amicro_h, amicro_l      ! deleted apico_h, apico_l
+      real(r8) :: amicro, qChl2C
       integer :: nwvln, ii, indx
 
-      if (sum(chla)<e8) then
+      if (chla<e8) then
          aAP = 0.0_r8
          return
       end if
@@ -308,12 +312,11 @@ contains
       ! Chl:C ratio (mg Chl mmol C-1)
       rChl2C = 1.0d3 * chla / (LPOC + e8)
       nwvln = size(vwvln)
-      qChl2C1 = (rChl2C(small_ppk) - 1.0/C2Chlmax(small_ppk)) / &
-         (1.0/C2Chlmin(small_ppk) - 1.0/C2Chlmax(small_ppk))
-      qChl2C2 = (rChl2C(large_ppk) - 1.0/C2Chlmax(large_ppk)) / &
-         (1.0/C2Chlmin(large_ppk) - 1.0/C2Chlmax(large_ppk))
-      qChl2C1 = min(1.0, max(0.0, qChl2C1))
-      qChl2C2 = min(1.0, max(0.0, qChl2C2))
+      !qChl2C1 = (rChl2C(small_ppk) - 1.0/C2Chlmax(small_ppk)) / &
+      !   (1.0/C2Chlmin(small_ppk) - 1.0/C2Chlmax(small_ppk))
+      qChl2C = (rChl2C - 1.0/C2Chlmax) / (1.0/C2Chlmin - 1.0/C2Chlmax)
+      !qChl2C1 = min(1.0, max(0.0, qChl2C1))
+      qChl2C = min(1.0, max(0.0, qChl2C))
 
       do ii = 1, nwvln, 1
          if (vwvln(ii)>=wvmin .and. vwvln(ii)<=wvmax) then
@@ -323,16 +326,16 @@ contains
             par = (vwvln(ii) - wvln) / dwv
             ! high-light and low-light chlorophill-a specific absorption
             ! coefficient (m2 mg chl-1)
-            apico_h = (rapico_h(indx)*(1.0-par)+rapico_h(indx+1)*par) &
-                     / rapico_h(139) * apico_676
-            apico_l = apico_h / 1.5
+            !apico_h = (rapico_h(indx)*(1.0-par)+rapico_h(indx+1)*par) &
+            !         / rapico_h(139) * apico_676
+            !apico_l = apico_h / 1.5
             amicro_h = (ramicro_h(indx)*(1.0-par)+ramicro_h(indx+1)*par) &
                      / ramicro_h(138) * amicro_674
             amicro_l = amicro_h / 1.5
-            apico = apico_h * (1.0 - qChl2C1) + apico_l * qChl2C1
-            amicro = amicro_h * (1.0 - qChl2C2) + amicro_l * qChl2C2
-            aAP(ii) = apico * rChl2C(small_ppk) * 1.0d-3 * LPOC(small_ppk) + &
-                     amicro * rChl2C(large_ppk) * 1.0d-3 * LPOC(large_ppk)
+            !apico = apico_h * (1.0 - qChl2C1) + apico_l * qChl2C1
+            amicro = amicro_h * (1.0 - qChl2C) + amicro_l * qChl2C
+            !aAP(ii) = apico * rChl2C(small_ppk) * 1.0d-3 * LPOC(small_ppk) + &
+            aAp(ii) = amicro * rChl2C * 1.0d-3 * LPOC
          else
             aAP(ii) = 0.0
          end if
@@ -346,19 +349,19 @@ contains
    !           al., 2007 Biogeosciences).
    !
    !------------------------------------------------------------------------------
-   subroutine CalcBbWaterPOC(PPOC, MPOC, vwvln, Bp)
+   subroutine CalcBbWaterPOC(MPOC, vwvln, Bp)
       implicit none
-      real(r8), intent(in) :: PPOC        ! small phytoplankton (umol C/m3)
+      !real(r8), intent(in) :: PPOC        ! small phytoplankton (umol C/m3)
       real(r8), intent(in) :: MPOC        ! large phytoplankton (umol C/m3)
       real(r8), intent(in) :: vwvln(:)    ! wavelength (nm)
       real(r8), intent(out) :: Bp(:)      ! backscattering coefficient (m-1)
       real(r8) :: aa, bb, tPPOC, tMPOC
 
-      tPPOC = PPOC * 1.0d-3 * MasC   ! mg C/m3
+      !tPPOC = PPOC * 1.0d-3 * MasC   ! mg C/m3
       tMPOC = MPOC * 1.0d-3 * MasC   ! mg C/m3 
-      aa = (tPPOC/476935.8)**(1.0/1.277)
+      !aa = (tPPOC/476935.8)**(1.0/1.277)
       bb = (tMPOC/17069.0)**(1.0/0.859)
-      Bp = Bbbg + aa * (vwvln/510.0)**(-0.5) + bb + Bbsw * 3.5d-3 * &
+      Bp = Bbbg + bb + Bbsw * 3.5d-3 * &
             (vwvln/450.0)**(-4.32)
    end subroutine
 
@@ -410,36 +413,47 @@ contains
    !          non-diatom algae dominates as Arctic LTER data shows.
    !
    !------------------------------------------------------------------------------
-   subroutine Photosynthesis(Chla, Chl2C, Dco2, Temp, SRP, Ipar, PCO2)
+   subroutine Photosynthesis(Chla, Chl2C, Dco2, Temp, SRP, Ipar, PCO2) ! added Chl2C according to ALBM-update
+   !subroutine Photosynthesis(Temp, pPAR, PCO2, Ps) 
       implicit none
-      real(r8), intent(in) :: Chla(NPOC)  ! mg chla m-3
-      real(r8), intent(in) :: Chl2C(NPOC) ! mg chla (mg C)-1
+      real(r8), intent(in) :: Chla  ! mg chla m-3
+      real(r8), intent(in) :: Chl2C ! mg chla (mg C)-1 ! added according to ALBM-update
       real(r8), intent(in) :: Dco2        ! umol/m3
       real(r8), intent(in) :: Temp        ! water temperature (K)
       real(r8), intent(in) :: SRP         ! soluble reactive P (umol m-3)
       real(r8), intent(in) :: Ipar        ! mol m-2 s-1
-      real(r8), intent(out) :: PCO2(NPOC) ! CO2 fixation rate (umol C m-3 s-1)
-      real(r8) :: fpar(NPOC), ftemp(NPOC)
-      real(r8) :: fsrp(NPOC), fco2(NPOC)
-      real(r8) :: phAlpha(NPOC), phBeta(NPOC) 
-      real(r8) :: Ksrp(NPOC), Vch(NPOC), Vm0(NPOC)
+      !real(r8), intent(in) :: pPAR        ! W m-2
+      real(r8), intent(out) :: PCO2 ! CO2 fixation rate (umol C m-3 s-1)
+      !real(r8) :: PO2 ! O2 production rate (umol O2 m-3 s-1)
+    !  real(r8), intent(out) :: Ps ! phytoplankton respiration rate (umol m-3 s-1)
+      real(r8) :: fpar, ftemp
+      real(r8) :: fsrp, fco2
+      real(r8) :: phAlpha!, phBeta changed by Lin 20250903 after meeting
+      real(r8) :: Vch, Vm0 ! added Vm0 according to ALBM-update; deleted Ksrp by Lin
       real(r8) :: Tw
       
       Tw = Temp - T0
-      Vch = (/sa_params(Param_Vchs), sa_params(Param_Vchl)/)
+      Vch = sa_params(Param_Vch)
       Vch = Vch * 1.0d+3 / MasC / SECOND_OF_DAY
-      Vm0 = (/sa_params(Param_Vchs), sa_params(Param_Vchl)/)
-      Vm0 = Vm0 * Chl2C 
-      phAlpha = (/sa_params(Param_phAlphas), sa_params(Param_phAlphal)/)
-      phBeta = (/sa_params(Param_phBetas), sa_params(Param_phBetal)/)
-      fpar =  (1.0 - exp(-phAlpha*Ipar/Vm0)) * exp(-phBeta*Ipar/Vm0)
+      Vm0 = sa_params(Param_Vch) ! added according to ALBM-update
+      Vm0 = Vm0 * Chl2C ! added according to ALBM-update
+      !phAlpha = sa_params(Param_phAlphal)
+      phAlpha = AlphaChl * SECOND_OF_DAY * 1.0d6 * Chl2C 
+    !  phBeta = sa_params(Param_phBetal) changed by Lin 20250903 after meeting
+      fpar =  (1.0 - exp(-phAlpha*Ipar/Vm0)) !* exp(-phBeta*Ipar/Vm0) changed by Lin 20250903 after meeting
       ftemp = ThetaG**(Tw-20) - ThetaG**(kt_ppk*(Tw-at_ppk)) + bt_ppk 
-      ftemp = max(0.0, ftemp)
+      ftemp = max(e8, ftemp) ! Changed from 0.0 to e8, Lin 20250424
       !ftemp = ThetaG**Tw
       fco2 = Dco2 / (Dco2 + Kco2)
-      Ksrp = (/sa_params(Param_Ksrps), sa_params(Param_Ksrpl)/)
-      fsrp = SRP / (SRP + Ksrp) 
+      !Ksrp = (/sa_params(Param_Ksrps), sa_params(Param_Ksrpl)/) ! deleted by Lin
+      fsrp = SRP / (SRP + Ks*1d3)     !fsrp = SRP / (SRP + Ksrp) changed by Lin 
       PCO2 = Vch * fpar * ftemp * fco2 * fsrp * Chla
+    !  PO2 = 10.19*exp(0.072*(Temp-T0))*0.21*pPAR*36*2.4/(10.19*exp(0.072*Temp) + &
+    !      0.021*pPAR*36*2.4)         ! PO2, mg O2/(m2*cm*day)
+      ! units for pPAR is converted to 1d3 J m-2 day-1
+    !  PO2 = PO2*SECOND_OF_DAY/MasO2*1d5   ! convert to umolO2 m-3 s-1 
+    !  PCO2 = PO2
+    !  Ps = 0.02*exp(0.093*(Temp-T0))*PO2
    end subroutine
 
    !------------------------------------------------------------------------------
@@ -455,43 +469,60 @@ contains
    !           by growth rate by: C2Chlmax - Kpc2chl * rGrowth   
    !
    !------------------------------------------------------------------------------
-   subroutine CalcChl2CRatio(Ipar, wIce, Temp, SRP, Chl2C)
+   subroutine CalcChl2CRatio(Ipar, Temp, SRP, Chl2C, C2Chl, PCm, PC)
       implicit none
-      real(r8), intent(in) :: Ipar(:)        ! PAR radiation (mol/m2/s)
-      real(r8), intent(in) :: wIce(:)        ! water ice fraction
+      real(r8), intent(in) :: Ipar        ! PAR radiation (mol/m2/s)
+      !real(r8), intent(in) :: wIce(:)        ! water ice fraction
       real(r8), intent(in) :: Temp           ! water temperature (K)
       real(r8), intent(in) :: SRP            ! soluble reactive P (umol/m3)
-      real(r8), intent(out) :: Chl2C(:,:)    ! mg Chl mmol C-1
-      real(r8) :: C2Chl0(NPOC), C2Chl(NPOC)
-      real(r8) :: fsrp(NPOC), ftemp(NPOC), Ksrp(NPOC)
-      real(r8) :: Ipar0, Tw
-      integer :: ii, nn
+      real(r8), intent(out) :: Chl2C    ! mg Chl mmol C-1
+      real(r8) :: C2Chl0              ! gC gChla-1
+      real(r8), intent(out) :: C2Chl
+    !  real(r8) :: fsrp(NPOC), ftemp(NPOC), Ksrp(NPOC) ! changed according to ALBM-update
+    !  real(r8) :: Ipar0, Tw ! changed according to ALBM-update
+    !  real(r8), integer :: ii, nn
+      real(r8), parameter :: Tref = 293      ! K   added by Lin
+      real(r8), intent(out) :: PCm           ! s-1   C-specific light saturated photosynthesis rate 
+      real(r8), intent(out) :: PC            ! s-1   C-specific photosynthesis rate 
+ 
+      C2Chl0=41.3-0.97*(Temp-273.15)
+      C2Chl=C2Chl0+AlphaChl*Ipar*1.0d6 / (2*PCmT*SRP*1.0d-3/(SRP*1d-3+Ks)*exp(-Ea/R*(Tref-Temp)/(Temp*Tref)))
+      ! notice: the unit for Ks is uM here
+      Chl2C = MasC / C2Chl ! convert to mg Chl mmol C-1
+      PCm = PCmT*SRP*1.0d-3/(SRP*1.0d-3+Ks)*exp(-Ea/R*(Tref-Temp)/(Temp*Tref))
+      PC = PCm*(1-exp(-AlphaChl*Ipar/C2Chl/PCm))
 
-      nn = size(Ipar)
-      Ipar0 = Ipar(1)
-      if (Ipar0>e8) then
-         Ksrp = (/sa_params(Param_Ksrps), sa_params(Param_Ksrpl)/)
-         fsrp = SRP / (SRP + Ksrp)
-         Tw = Temp - T0
-         ftemp = ThetaG**(Tw-20) - ThetaG**(kt_ppk*(Tw-at_ppk)) + bt_ppk
-         ftemp = max(0.0, ftemp)
-         C2Chl0 = C2Chlmax - Kpc2chl * mu0 * ftemp * fsrp 
-         C2Chl0 = max(C2Chl0, C2Chlmin)
-         do ii = 1, nn, 1
-            if (wIce(ii)<1.0 .and. Ipar(ii)>0.01*Ipar0) then
-               C2Chl = C2Chl0 - (C2Chl0 - C2Chlmin) * log(Ipar0/Ipar(ii)) &
-                  / 4.605
-               C2Chl = min(max(C2Chl, C2Chlmin), C2Chlmax)
-               Chl2C(:,ii) = 1.0 / C2Chl
-            else
-               Chl2C(:,ii) = 1.0 / C2Chlmax
-            end if
-         end do
-      else
-         do ii = 1, nn, 1
-            Chl2C(:,ii) = 1.0 / C2Chlmax
-         end do 
-      end if
+    !  nn = size(Ipar)
+    !  Ipar0 = Ipar(1)
+    !  if (Ipar0>e8) then
+    !     Ksrp = (/sa_params(Param_Ksrps), sa_params(Param_Ksrpl)/)
+    !     ! Vch = (/sa_params(Param_Vchs), sa_params(Param_Vchl)/) ! deleted according to ALBM-update
+    !     fsrp = SRP / (SRP + Ksrp)
+    !     Tw = Temp - T0
+    !     ftemp = ThetaG**(Tw-20) - ThetaG**(kt_ppk*(Tw-at_ppk)) + bt_ppk
+    !     ftemp = max(0.0, ftemp)
+    !     ! PCmax = Vch / MasC * 0.24 * ftemp * fsrp !deleted according to ALBM-update
+    !     C2Chl0 = C2Chlmax - Kpc2chl * mu0 * ftemp * fsrp ! changed according to ALBM-update 
+    !     C2Chl0 = max(C2Chl0, C2Chlmin)
+    !     do ii = 1, nn, 1
+    !        if (wIce(ii)<1.0 .and. Ipar(ii)>0.01*Ipar0) then ! changed e8 to 1.0 according to ALBM-update
+    !           C2Chl = C2Chl0 - (C2Chl0 - C2Chlmin) * log(Ipar0/Ipar(ii)) &
+    !              / 4.605
+    !           C2Chl = min(max(C2Chl, C2Chlmin), C2Chlmax)
+    !           Chl2C(:,ii) = 1.0 / C2Chl
+    !        else
+    !           Chl2C(:,ii) = 1.0 / C2Chlmax
+    !        end if
+    !     end do
+    !  else
+    !     do ii = 1, nn, 1
+    !     do ii = 1, nn, 1
+    !     do ii = 1, nn, 1
+    !  else
+    !     do ii = 1, nn, 1
+    !        Chl2C(:,ii) = 1.0 / C2Chlmax
+    !     end do 
+    !  end if
    end subroutine
 
    !------------------------------------------------------------------------------
@@ -499,20 +530,114 @@ contains
    ! Purpose: Calculate CH4 oxidation rate by Michaelis-Menten kinetics. 
    !
    !------------------------------------------------------------------------------
-   subroutine Methanotrophy(Dch4, Do2, temp, rate)
+   subroutine MethanotrophyInWater(itype, month, Dch4, Do2, temp, Iab, rate_ae)
       implicit none
+      integer, intent(in) :: itype    ! lake type
+      integer, intent(in) :: month
       real(r8), intent(in) :: Dch4     ! CH4 concentration (umol/m3)
       real(r8), intent(in) :: Do2      ! O2 concentration (umol/m3)
       real(r8), intent(in) :: temp     ! water temperature (K)
-      real(r8), intent(out) :: rate    ! umol CH4 m-3 s-1
-      real(r8) :: Kch4, Ko2, Qch4, OQ10
+      real(r8), intent(in) :: Iab     ! W/m2
+     ! real(r8), intent(out) :: rate    ! umol CH4 m-3 s-1 
+      real(r8), intent(out) :: rate_ae  ! aerobic oxidation rate(umol CH4 m-3 s-1)
+     ! real(r8), intent(out) :: rate_an  ! anaerobic oxidation rate(umol CH4 m-3 s-1)
+      !real(r8) :: Kch4, Ko2, Qch4, OQ10
+      real(r8) :: BetaCH4, LamO2 ! added by Lin according to Tan et al., 2024
+      real(r8) :: pH, factor! Dno3, Dso4
+      real(r8) :: flight, ftemp, gen!,fo2
 
-      Qch4 = sa_params(Param_Qch4)
-      OQ10 = sa_params(Param_OQ10)
-      Kch4 = sa_params(Param_Kch4)
-      Ko2 = sa_params(Param_Ko2)
-      rate = Qch4 * (OQ10**(0.1*(temp-Tor))) * (Dch4/(Kch4+Dch4)) * &
-            (Do2/(Ko2+Do2))
+      if (month == 7 .or. month == 8) then
+         pH = SMpH(itype)
+      else
+         pH = LKpH(itype)
+      end if   
+     ! Qch4 = sa_params(Param_Qch4)
+     ! OQ10 = sa_params(Param_OQ10)
+     ! Kch4 = sa_params(Param_Kch4)
+     ! Ko2 = sa_params(Param_Ko2)
+      BetaCH4 = sa_params(Param_BetaCH4) ! added by Lin according to Tan et al., 2024
+      LamO2 = sa_params(Param_LamO2) ! added by Lin accordng to Tan et al., 2024
+      call GetCH4pHFactor(pH, OpHmin, OpHmax, OpHopt, factor) ! added by Lin
+   !   fo2 = 1.0 / (1.0 + etaO2*1.0d-6*Do2)
+   !   if (temp>Tor(2)-e8) then
+      ftemp = max(1.0, OQ10**(0.1*(temp-Tor(2))))
+   !   else
+   !      ftemp = OQ10
+   !   end if
+      flight = -4d-5! according to Zhang et al., 2022
+!      Dno3 = LKNO3(itype)/62*1d6 ! mg/L convert to umol/m3
+!      Dso4 = LKSO4(itype)/96*1d6 ! mg/L convert to umol/m3
+      gen = (2**pmoA(itype))*sa_Params(Param_Rous)
+      rate_ae = flight * Iab + factor * ftemp * gen *1.0d-7 * &
+           ((Dch4*1.0d-6) ** BetaCH4) * exp((-1)*LamO2*(Do2*1.0d-6)) * (1-exp((-30)*(Do2*1.0d-6)))!(Do2/(Ko2+Do2)) * (Dch4/(Kch4+Dch4))
+                                                  ! changed by Lin according to Tan et al., 2024 ! umol/m3/s
+      rate_ae = max(e8, rate_ae)
+   end subroutine
+
+   subroutine MethanotrophyInSed(itype, Dch4, Do2, temp, Prate, rate, rate_ae, rate_an)
+      implicit none
+      integer, intent(in) :: itype    ! lake type
+      real(r8), intent(in) :: Dch4     ! CH4 concentration (umol/m3)
+      real(r8), intent(in) :: Do2      ! O2 concentration (umol/m3)
+      real(r8), intent(in) :: temp     ! water temperature (K)
+      real(r8), intent(in) :: Prate    ! CH4 production rate(umol m-3 s-1)
+      real(r8), intent(out) :: rate    ! umol CH4 m-3 s-1
+      real(r8), intent(out) :: rate_ae  ! aerobic oxidation rate(umol CH4 m-3 s-1)
+      real(r8), intent(out) :: rate_an  ! anaerobic oxidation rate(umol CH4 m-3 s-1)
+     ! real(r8) :: Kch4, Ko2, Qch4, OQ10
+      real(r8) :: BetaCH4, LamO2 ! added by Lin according to Tan et al., 2024
+      real(r8) :: Kan ! added by Lin 20250903
+      real(r8) :: pH, factor ! Dno3, Dso4
+     ! real(r8) :: fo2!, flight
+      real(r8) :: ftemp_an, ftemp_ae, ftemp_pr, gen
+
+      pH = SedPH(itype)
+     ! Qch4 = sa_params(Param_Qch4)
+     ! OQ10 = sa_params(Param_OQ10)
+     ! Kch4 = sa_params(Param_Kch4)
+     ! Ko2 = sa_params(Param_Ko2)
+      BetaCH4 = sa_params(Param_BetaCH4) ! added by Lin according to Tan et al., 2024
+      LamO2 = sa_params(Param_LamO2) ! added by Lin accordng to Tan et al., 2024
+      Kan = sa_params(Param_Kan) ! added by Lin 20250903
+      call GetCH4pHFactor(pH, OpHmin, OpHmax, OpHopt, factor) ! added by Lin
+    !  fo2 = 1.0 / (1.0 + etaO2*1.0d-6*Do2)      
+    !  Dno3 = SedNO3(itype)/62*sa_params(Param_Rous)*1d6 ! mg/g convert to umol/m3
+    !  Dso4 = SedSO4(itype)/96*sa_params(Param_Rous)*1d6 ! mg/g convert to umol/m3
+      !if (temp>Tpr-e8) then
+      ftemp_pr = PQ10(itype)**(0.1*(temp-Tpr))
+      !else
+      !   ftemp_pr = PQ10(itype)
+      !end if  
+      !if (temp>Tor(1)-e8) then
+      ftemp_an = AOMQ10(itype)**(0.1*(temp-Tor(1)))
+      !else
+      !   ftemp_an = AOMQ10(itype)
+      !end if
+      !if (temp>Tor(2)-e8) then
+      ftemp_ae = max(1.0, OQ10**(0.1*(temp-Tor(2))))
+      !else
+      !   ftemp_ae = OQ10
+      !end if
+      gen = (2**pmoA(itype))*sa_params(Param_Rous)
+      rate_ae = 0.0
+      rate_an = 0.0
+      if (Do2>minDo2) then
+      !   rate_an = 0.0
+         rate_ae = factor * ftemp_ae * gen * 1.0d-7 * &
+              ((Dch4*1.0d-6) ** BetaCH4) * exp((-1)*LamO2*(Do2*1.0d-6)) * (1-exp((-30)*(Do2*1.0d-6)))!(Do2/(Ko2+Do2)) * (Dch4/(Kch4+Dch4))
+                                                    ! changed by Lin according to Tan et al., 2024 ! umol/m3/s
+         !print *, 'aerobic rate(umol m-3 s-1)=', rate_ae
+         rate_an = 0.0
+      else
+         !rate_an = factor * (OQ10**(0.1*(temp-Tor(1)))) * (2**mcrA(itype))/(7d6)*&
+         !   2d0*sa_params(Param_Rous)/SECOND_OF_DAY * (Dno3/&
+         !   (Ko2+Dno3)+Dso4/(Ko2+Dso4)) * Dch4/(Kch4+Dch4) ! umol/m3/s
+         rate_an = Prate * Kan * ftemp_an / ftemp_pr  
+         ! according to Feng, 2018, master; Xu et al., 2024
+         rate_ae = 0.0
+         !print *, 'anaerobic rate(umol m-3 s-1)=', rate_an
+      end if
+      rate = rate_an + rate_ae
    end subroutine
 
    !------------------------------------------------------------------------------
@@ -521,38 +646,65 @@ contains
    !           aerobic and anaerobic reactions. 
    !
    !------------------------------------------------------------------------------
-   subroutine Methanogenesis(carb, temp, Do2, rCH4, rCO2)
+   subroutine Methanogenesis(itype, carb, temp, Do2, rCH4, rCO2)
       implicit none
-      real(r8), intent(in) :: carb(:)     ! unfrozen labile carbon (umol/m3)
+      integer, intent(in) :: itype     ! lake type
+      real(r8), intent(in) :: carb     ! unfrozen labile carbon (umol/m3)
       real(r8), intent(in) :: temp        ! sediment temperature (K)
       real(r8), intent(in) :: Do2         ! O2 concentration (umol/m3)
-      real(r8), intent(out) :: rCH4(:)    ! umol CH4 m-3 s-1
-      real(r8), intent(out) :: rCO2(:)    ! umol CO2 m-3 s-1
-      real(r8) :: fo2, ftemp, Rcn, Rco
-      real(r8) :: PQ10_act, PQ10_pas
+      real(r8), intent(out) :: rCH4    ! umol CH4 m-3 s-1
+      real(r8), intent(out) :: rCO2    ! umol CO2 m-3 s-1
+      real(r8) :: fo2, ftemp, fsn ! Rcn ! Rco
+      !real(r8) :: PQ10_act, PQ10_pas
+      real(r8) :: factor, Dno3, Dso4, fac, contri, Rous, pl, tn, gen
 
-      Rcn = sa_params(Param_Rcn)
-      Rco = 2.149145d-10 
-      PQ10_pas = sa_params(Param_PQ10n)
-      PQ10_act = 1.006950d+00 
+      !Rcn = sa_params(Param_Rcn)
+      !Rco = 2.149145d-10 
+      !PQ10_pas = sa_params(PQ10)
+      !PQ10_act = 1.006950d+00     ! deleted by Lin
+      Rous = sa_params(Param_Rous)
       ! O2 suppression (Tang et al., 2010; Biogeosciences)
+      Dno3 = SedNO3(itype)/MasNO3*Rous*1d6 ! mg/g convert to umol/m3
+      Dso4 = SedSO4(itype)/MasSO4*Rous*1d6 ! mg/g convert to umol/m3 
       fo2 = 1.0 / (1.0 + etaO2*1.0d-6*Do2)
+      fsn = 1.0 / (1.0 + etaO2*1.0d-6*(Dso4+Dno3*0.25))  ! SO42- and NO3- suppression
       ! 14C-enriched pool
-      ftemp = PQ10_pas**(0.1*(temp-Tpr))
-      rCH4(pasC) = 0.25 * Rcn * carb(pasC) * ftemp * fo2
-      rCO2(pasC) = 3.0 * rCH4(pasC)
-      ! 14C-depleted pool
-      ftemp = PQ10_act**(0.1*(temp-Tpr_act))
-      rCH4(actC) = 0.5 * Rco * carb(actC) * ftemp * fo2
-      rCO2(actC) = rCH4(actC)
+     ! if (temp>Tpr-e8) then
+      ftemp = PQ10(itype)**(0.1*(temp-Tpr))
+     ! else 
+     !    ftemp = PQ10(itype)  
+     ! end if
+      !rCH4 = 0.25 * Rcn * carb * ftemp * fo2
+      call GetCH4pHFactor(SedpH(itype), PpHmin, PpHmax, PpHopt, factor) ! added by Lin
+    !  rCH4 = 0.25 * factor * (carb)**2.5*PLFA(itype)*(fo2*fsn)*log(SedTN(itype)/7*1d10)*&
+    !      1d-21*exp(carb/sa_params(Param_Rous)*MasC*1d-7) * ftemp
+      fac = fo2*fsn*factor
+      pl = PLFA(itype)*5*Rous ! ug/g convert to umol/m3
+      tn = SedTN(itype)/MasN * Rous * 1d7
+      contri = (carb**2) * pl * tn  
+      contri = contri ** 0.25 !(1.0/3.0)
+      !rCH4 = fo2 * fsn * factor * (carb * PLFA(itype)*5*sa_params(Param_Rous) * &
+      !    SedTN(itype)/MasN * sa_params(Param_Rous) * 1d7)**(1/3) * 1d-8 * 0.25 * 2**mcrA(itype) * ftemp 
+      gen = (2**mcrA(itype))*sa_params(Param_Rous)*1.0d3 ! copies/g convert to copies/m3
+      rCH4 = fac*contri*gen*ftemp*1.3d-16
+  !    rCH4 = rCH4 * kk(itype)
+  !    rCH4 = bb(itype)*rCH4 + cc(itype)*max(0d0,(temp-Tpr)) ! changed by Lin, 2025-05-19
+      !rCH4 = fac*contri*2.5*1d-9*(2**mcrA(itype))*ftemp 
+      rCO2 = 0.0_r8  ! changed by Lin
+      ! 14C-depleted pool           ! closed by Lin
+      !ftemp = PQ10_act**(0.1*(temp-Tpr_act))
+      !rCH4(actC) = 0.5 * Rco * carb(actC) * ftemp * fo2
+      !rCO2(actC) = rCH4(actC)
+
+
    end subroutine
 
    subroutine AerobicDegradation(pool, temp, Do2, rCO2)
       implicit none
-      real(r8), intent(in) :: pool(:)     ! umol/m3
+      real(r8), intent(in) :: pool     ! umol/m3
       real(r8), intent(in) :: temp        ! K
       real(r8), intent(in) :: Do2         ! umol/m3
-      real(r8), intent(out) :: rCO2(:)    ! umol/m3/s
+      real(r8), intent(out) :: rCO2    ! umol/m3/s
       real(r8) :: Rca, ftemp, fo2
       
       Rca = sa_params(Param_Rca)
@@ -566,9 +718,9 @@ contains
    ! Purpose: Calculate pH factor for CH4 production. (A2, Zhuang et al., 2004)
    !
    !------------------------------------------------------------------------------
-   subroutine GetCH4ProdpHFactor(pH, factor)
+   subroutine GetCH4pHFactor(pH, pHmin, pHmax, pHopt, factor)
       implicit none
-      real(r8), intent(in) :: pH
+      real(r8), intent(in) :: pH, pHmin, pHmax, pHopt
       real(r8), intent(out) :: factor
       real(r8) :: f1, f2
 
@@ -584,18 +736,18 @@ contains
    !          respiration (DIC), mortality (detritus) and excretion (DOC).
    !
    !------------------------------------------------------------------------------
-   subroutine MetabolicLoss(biomass, temp, rloss, rrloss)
+   subroutine MetabolicLoss(biomass, temp, rloss)
       implicit none
-      real(r8), intent(in) :: biomass(NPOC)  ! umol C m-3
+      real(r8), intent(in) :: biomass  ! umol C m-3
       real(r8), intent(in) :: temp           ! water temperature (K)
-      real(r8), intent(out) :: rloss(NPOC)   ! loss rate (umol C m-3 s-1)
-      real(r8), intent(out) :: rrloss(NPOC)  ! respiration loss
-      real(r8) :: Klr(NPOC), Tw
+      real(r8), intent(out) :: rloss   ! loss rate (umol C m-3 s-1)
+      !real(r8), intent(in) :: rrloss  ! respiration loss
+      real(r8) :: Klr, Tw
 
       Tw = temp - T0
-      Klr = (/sa_params(Param_Klrs), sa_params(Param_Klrl)/)
+      Klr = sa_params(Param_Klr)
       rloss = Klr / SECOND_OF_DAY * (ThetaML**(Tw-20)) * biomass 
-      rrloss = Fres * rloss
+      !rrloss = Fres * rloss
    end subroutine
 
    !------------------------------------------------------------------------------
@@ -634,20 +786,21 @@ contains
       rDOC = rRDOM / SECOND_OF_DAY * ftemp * fo2 * DOC
    end subroutine
 
-   subroutine UpdateAlgaeDensity(Chl2C, Ipar, dt, rho)
+   subroutine UpdateAlgaeDensity(Chl2C, Ipar, dt, rho)  ! added Chl2C according to ALBM-update
       implicit none
-      real(r8), intent(in) :: Chl2C(NPOC)    ! mg chla (mg C)-1
+      real(r8), intent(in) :: Chl2C    ! mg chla (mg C)-1  ! added according to ALBM-update
       real(r8), intent(in) :: Ipar           ! PAR (mol/m2/s)
       real(r8), intent(in) :: dt             ! time interval (s)
-      real(r8), intent(inout) :: rho(NPOC)   ! density (kg/m3)
-      real(r8) :: Vm0(NPOC), drho(NPOC), fpar(NPOC)
-      real(r8) :: phAlpha(NPOC), phBeta(NPOC)
+      real(r8), intent(inout) :: rho   ! density (kg/m3)
+      real(r8) :: Vm0, drho, fpar  ! added Vm0 according to ALBM-update
+      real(r8) :: phAlpha, phBeta
 
-      phAlpha = (/sa_params(Param_phAlphas), sa_params(Param_phAlphal)/)
-      phBeta = (/sa_params(Param_phBetas), sa_params(Param_phBetal)/)
-      Vm0 = (/sa_params(Param_Vchs), sa_params(Param_Vchl)/)
-      Vm0 = Vm0 * Chl2C
-      fpar =  (1.0 - exp(-phAlpha*Ipar/Vm0)) * exp(-phBeta*Ipar/Vm0)
+      !phAlpha = sa_params(Param_phAlphal)    ! changed by Lin
+      phAlpha = AlphaChl * SECOND_OF_DAY * 1.0d6 * Chl2C
+     ! phBeta = sa_params(Param_phBetal) ! changed by Lin 20250903 after meeting
+      Vm0 = sa_params(Param_Vch) ! added according to ALBM-update
+      Vm0 = Vm0 * Chl2C   ! added according to ALBM-update
+      fpar =  (1.0 - exp(-phAlpha*Ipar/Vm0)) !* exp(-phBeta*Ipar/Vm0) changed by Lin 20250903
       drho = (dsc1 * fpar - dsc3) * dt
       rho = rho + drho
    end subroutine
@@ -665,10 +818,6 @@ contains
    !   real(r8), intent(in) :: Do2         ! dissolved O2 (umol/m3)
    !   real(r8), intent(out) :: rPOC       ! umol C m-3 s-1
    !   real(r8) :: rDPOM, ftemp, fo2
-   !
-   !   rDPOM = sa_params(Param_DPOM) 
-   !   ftemp = ThetaPM**(temp-T0-20.0)
-   !   fo2 = Do2 / (Do2 + Ko2CM)
    !   rPOC = rDPOM / SECOND_OF_DAY * ftemp * fo2 * POC
    !end subroutine
 
@@ -702,5 +851,20 @@ contains
    !   ! autotrophic respiration
    !   PCO2 = PCO2 - 3765.06 * 1.1574d-6 * (1.047**(Tw-20.0)) * Chla
    !end subroutine
+   
 
+   !----------------------------------------------------------
+   !
+   ! Calculate the Empirical regression coefficient for C2Chl(gC*gChla-1) and photon flux density(umol photons m-2 s-1). 
+   ! Lin added this funcion according to Gui, 2023, master thesis
+   ! This function is from Geider et al., 1986
+   !----------------------------------------------------------
+   function CalcERCoefficient(temp)
+      implicit none
+      real(r8), intent (in) :: temp      ! Celcius
+      real(r8) :: CalcERCoefficient     ! gC gChla-1 m2 s umol photons-1
+
+      CalcERCoefficient = 1.85*exp(-0.126*temp)
+   end function
+  
 end module bg_utilities_mod

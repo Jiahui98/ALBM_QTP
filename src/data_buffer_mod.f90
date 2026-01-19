@@ -10,6 +10,7 @@ module data_buffer_mod
    use shr_typedef_mod
    use read_data_mod
    use phy_utilities_mod
+   use bg_const_mod
 
    implicit none
    public
@@ -34,6 +35,10 @@ module data_buffer_mod
    real(r4), allocatable :: m_doHist(:,:)    ! dissolved oxygen
    real(r4), allocatable :: m_dch4Hist(:,:)  ! dissolved methane
    real(r4), allocatable :: m_dco2Hist(:,:)  ! dissolved CO2
+   real(r4), allocatable :: m_belowdoc(:)  ! DOC concentration at 20cm below the surf/ice
+   real(r4), allocatable :: m_belowdo(:)     ! dissolved O2 at 20cm below the surf/ice
+   real(r4), allocatable :: m_belowdch4(:)   ! dissolved CH4 at 20cm below the surf/ice
+   real(r4), allocatable :: m_belowdco2(:)   ! dissolved CO2 at 20cm below the surf/ice
    real(r4), allocatable :: m_docHist(:,:)   ! DOC
    real(r4), allocatable :: m_srpHist(:,:)   ! soluble reactive P
    real(r4), allocatable :: m_fch4dHist(:)   ! diffusive methane flux
@@ -66,19 +71,19 @@ module data_buffer_mod
    ! Solar radiation in water column (W/m2)
    real(r8), allocatable :: m_Iab(:)
    ! incumbent and temporary POC and DOC concentrations in water (umol/m3)
-   real(r8), allocatable :: m_waterPOC(:,:)
-   real(r8), allocatable :: m_tmpWaterPOC(:,:)
+   real(r8), allocatable :: m_waterPOC(:)
+   real(r8), allocatable :: m_tmpWaterPOC(:)
    ! chla concentration in water (mg/m3)
-   real(r8), allocatable :: m_chla(:,:)
+   real(r8), allocatable :: m_chla(:) ! changed from m_rChl2C to m_chla according to ALBM-update
    ! gas exchange amount from bubble to water (umol/m3/s)
    real(r8), allocatable :: m_gasExchange(:,:)
    ! gas pools for bubbles trapped in the ice (umol) 
    real(r8), allocatable :: m_iceBubblePool(:)
    ! carbon pools for settling phytoplankton (umol) 
-   real(r8), allocatable :: m_sinkPOCPool(:)
+   real(r8) :: m_sinkPOCPool     ! Changed by Lin
    ! 14C-enriched and 14C-depleted decomposable carbon pools (umol/m3)
-   real(r8), allocatable :: m_frzCarbPool(:,:)
-   real(r8), allocatable :: m_unfrzCarbPool(:,:)
+   real(r8), allocatable :: m_frzCarbPool(:)   ! changed by Lin to ignore 14C-depleted C
+   real(r8), allocatable :: m_unfrzCarbPool(:)
    ! downward scalar irradiance (mol photons m-2 s-1 nm-1)
    real(r8), allocatable :: m_fsphot(:,:)
    ! downward irradiance spectrum (nm)
@@ -105,7 +110,7 @@ module data_buffer_mod
    real(r8), allocatable :: m_Qso(:)
    real(r8), allocatable :: m_Qgw(:)
    ! radiation-related conditions
-   real(r8), allocatable :: m_aCO2(:)
+   real(r8), allocatable :: m_aCO2(:), m_aCH4(:)
    real(r8), allocatable :: m_aO3(:)
    real(r8), allocatable :: m_aAOD(:)
    ! water and sediment depth vector (m)
@@ -198,6 +203,10 @@ contains
       allocate(m_dch4Hist(WATER_LAYER+1,ntout))
       allocate(m_dco2Hist(WATER_LAYER+1,ntout))
       allocate(m_docHist(WATER_LAYER+1,ntout))
+      allocate(m_belowdco2(ntout))
+      allocate(m_belowdch4(ntout))
+      allocate(m_belowdo(ntout))
+      allocate(m_belowdoc(ntout))
       allocate(m_srpHist(WATER_LAYER+1,ntout))
       allocate(m_chlHist(WATER_LAYER+1,ntout))
       allocate(m_phytobioHist(WATER_LAYER+1,ntout))
@@ -225,12 +234,12 @@ contains
       allocate(m_wrho(WATER_LAYER+1))
       allocate(m_dVsc(WATER_LAYER+1))
       allocate(m_Iab(WATER_LAYER+2))
-      allocate(m_sinkPOCPool(NPOC))
-      allocate(m_waterPOC(NPOC,WATER_LAYER+1))
-      allocate(m_tmpWaterPOC(NPOC,WATER_LAYER+1))
-      allocate(m_chla(NPOC,WATER_LAYER+1))
-      allocate(m_frzCarbPool(NPOOL,NSLAYER+1))
-      allocate(m_unfrzCarbPool(NPOOL,NSLAYER+1))
+      !allocate(m_sinkPOCPool(NPOC))    ! deleted by Lin
+      allocate(m_waterPOC(WATER_LAYER+1))
+      allocate(m_tmpWaterPOC(WATER_LAYER+1))
+      allocate(m_chla(WATER_LAYER+1)) ! changed from m_rChl2C to m_chla according to ALBM-update
+      allocate(m_frzCarbPool(NSLAYER+1)) ! changed by Lin
+      allocate(m_unfrzCarbPool(NSLAYER+1))
       ! allocate memory for air forcing data
       allocate(m_airTemp(ntin))
       allocate(m_airTempMax(ntin))
@@ -251,9 +260,10 @@ contains
       allocate(m_POCQsi(simday))
       allocate(m_SRPQsi(simday))
       allocate(m_Qso(simday))
-      allocate(m_Qgw(simday))
+      allocate(m_Qgw(ntin))
       ! allocate memory for irradiation data
-      allocate(m_aCO2(simyr))
+      allocate(m_aCO2(simmon))
+      allocate(m_aCH4(simmon)) ! added by Lin
       allocate(m_aO3(simmon))
       allocate(m_aAOD(simmon))
       ! allocate memory for radiation vector
@@ -278,9 +288,14 @@ contains
          call ReadLakeBathymetry(lake_info, m_Zw, m_Az, m_dAz)
       end if
       call ReadStaticData(veg_file, loc180, 'ftree', m_ftree)
-      call ReadStaticData(wlnd_file, loc180, 'glwd', m_fwlnd)
-      call ReadStaticData(soc_file, loc180, 'soc', Ncinterp, m_soc)
-      call ReadStaticData(tref_file, loc180, 't2m', Ncinterp, m_radPars%tref)
+      !call ReadStaticData(wlnd_file, loc180, 'glwd', m_fwlnd) ! closed by Lin, 20250218
+          
+      !call ReadStaticData(soc_file, loc180, 'soc', Ncinterp, m_soc) ! closed by Lin, 20250219 according to Tan's suggestion
+      m_soc=soc(lake_info%itype) ! added by Lin, 20250219 according to Tan's suggestion
+      !m_ftree=0
+      m_fwlnd=fwlnd(lake_info%itype)     ! added by Lin, 20250218
+      !m_soc=10
+      call ReadStaticData(tref_file, loc180, 't2m', Ncinterp, m_radPars%tref) 
       ! initialize formal air forcing data
       if (len_trim(forcing_dir)==0) then
          call Read2DTSData(tas_file, time, loc180, 'tas', m_airTemp)
@@ -293,46 +308,42 @@ contains
          call Read2DTSData(wind_file, time, loc180, 'sfcWind', m_airWind)
          call Read2DTSData(rsds_file, time, loc180, 'rsds', m_airSWRad)
          call Read2DTSData(rlds_file, time, loc180, 'rlds', m_airLWRad)
+         call Read2dTSData(gw_file, time, loc180, 'gw', m_Qgw) ! added by Lin 20250903
       else
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'tas',  m_airTemp)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'tasmax', m_airTempMax)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'tasmin',  m_airTempMin)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'hurs',  m_airRH)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'pr',  m_airPr)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'prsn',  m_airPrsn)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'ps',  m_airPs)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'sfcWind',  m_airWind)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'rsds',  m_airSWRad)
-         call ReadSiteTSData(lake_info, forcing_dir, time, forcing_tstep, 'rlds',  m_airLWRad)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'tas',  m_airTemp)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'tasmax', m_airTempMax)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'tasmin',  m_airTempMin)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'hurs',  m_airRH)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'pr',  m_airPr)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'prsn',  m_airPrsn)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'ps',  m_airPs)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'sfcWind',  m_airWind)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'rsds',  m_airSWRad)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'rlds',  m_airLWRad)
+         call ReadSiteTSData(lake_info, time, forcing_tstep, 'gw', m_Qgw)
       end if
       ! initialize long-term forcing data
-      call ReadGlobalTSData(co2_file, time, 'co2_rcp26', m_aCO2) 
+     ! call ReadGlobalTSData(co2_file, time, 'co2', m_aCO2)
+     ! call ReadGlobalTSData(ch4_file, time, 'ch4', m_aCH4) 
       call Read2DTSData(o3_file, time, loc180, 'tro3', m_aO3)
       call Read2DTSData(aod_file, time, loc180, 'AOD_550', m_aAOD)
+      call ReadGlobalTSData(co2_file, time, 'co2', m_aCO2)
+      call ReadGlobalTSData(ch4_file, time, 'ch4', m_aCH4)
       ! no hydrology and chemistry input data
+      m_Qsi = 0.0_r8
       m_tQsi = T0 + 4.0
       m_dQsi = 1d3
       m_DOQsi = 0.0_r8
-      if (len_trim(hydro_dir)==0) then
-         m_Qsi = 0.0_r8
-         m_DICQsi = 0.0_r8
-         m_DOCQsi = 0.0_r8
-         m_POCQsi = 0.0_r8
-         m_SRPQsi = 0.0_r8
-         m_Qso = 0.0_r8
-         m_Qgw = 0.0_r8
-      else
-         call ReadSiteTSData(lake_info, hydro_dir, time, 'day', 'Qsi', m_Qsi)
-         call ReadSiteTSData(lake_info, hydro_dir, time, 'day', 'DICQsi', m_DICQsi)
-         call ReadSiteTSData(lake_info, hydro_dir, time, 'day', 'DOCQsi', m_DOCQsi)
-         call ReadSiteTSData(lake_info, hydro_dir, time, 'day', 'POCQsi', m_POCQsi)
-         call ReadSiteTSData(lake_info, hydro_dir, time, 'day', 'SRPQsi', m_SRPQsi)
-         call ReadSiteTSData(lake_info, hydro_dir, time, 'day', 'Qso', m_Qso)
-         call ReadSiteTSData(lake_info, hydro_dir, time, 'day', 'Qgw', m_Qgw)
-      end if
+      m_DICQsi = 0.0_r8
+      m_DOCQsi = 0.0_r8
+      m_POCQsi = 0.0_r8
+      m_SRPQsi = 0.0_r8
+      m_Qso = 0.0_r8
+     ! m_Qgw = 4.0d-3 * m_airPr * lake_info%Asurf!0.0_r8   ! changed by Lin according to Gao et al., 2018
+      m_Qgw = m_Qgw * lake_info%Asurf ! changed by Lin 20250903
       ! rescale tree cover and wetland fraction
       call RescaleTreeCoverFraction(m_ftree)
-      call RescaleWetlandFraction(m_fwlnd)
+    !  call RescaleWetlandFraction(m_fwlnd) ! closed by Lin, 20250218
       ! units conversion
       m_airPr = 1.0d-3 * m_airPr             ! convert to m/s (water)
       m_airPrsn = 1.0d-3 * m_airPrsn         ! convert to m/s (water)
@@ -342,12 +353,12 @@ contains
       m_POCQsi = 1d+3 * m_POCQsi             ! convert to umol/m3
       m_SRPQsi = 1d+3 * m_SRPQsi             ! convert to umol/m3
       m_aO3 = 1.0d-3 * m_aO3                 ! convert to 1000 DU
+      m_aCH4 = 1.0d-3 * m_aCH4               ! convert to ppm
    end subroutine
 
    subroutine DestructDataBuffer()
       implicit none
 
-      ! destroy the memory for the archive variables
       deallocate(m_timeHist)
       deallocate(m_tempwHist)
       deallocate(m_tempsHist)
@@ -366,13 +377,16 @@ contains
       deallocate(m_dch4Hist)
       deallocate(m_dco2Hist)
       deallocate(m_docHist)
+      deallocate(m_belowdco2)
+      deallocate(m_belowdch4)
+      deallocate(m_belowdo)
+      deallocate(m_belowdoc)
       deallocate(m_srpHist)
       deallocate(m_chlHist)
       deallocate(m_phytobioHist)
       deallocate(m_fch4dHist)
       deallocate(m_fch4eHist)
       deallocate(m_fco2Hist)
-      ! destroy the memory for the state variables
       deallocate(m_waterTemp)
       deallocate(m_sedTemp)
       deallocate(m_tmpWaterTemp)
@@ -386,7 +400,7 @@ contains
       deallocate(m_tmpSedSubCon)
       deallocate(m_waterPOC)
       deallocate(m_tmpWaterPOC)
-      deallocate(m_chla)
+      deallocate(m_chla) ! changed from m_rChl2C to m_chla according to ALBM-update
       deallocate(m_Kt)
       deallocate(m_Kv)
       deallocate(m_Ks)
@@ -396,10 +410,9 @@ contains
       deallocate(m_waterIce)
       deallocate(m_sedIce)
       deallocate(m_iceBubblePool)
-      deallocate(m_sinkPOCPool)
+      !deallocate(m_sinkPOCPool)    ! deleted by Lin
       deallocate(m_frzCarbPool)
       deallocate(m_unfrzCarbPool)
-      ! destroy the memory for air forcing data
       deallocate(m_airTemp)
       deallocate(m_airTempMax)
       deallocate(m_airTempMin)
@@ -412,6 +425,7 @@ contains
       deallocate(m_airLWRad)
       ! destroy memory for irradiation data
       deallocate(m_aCO2)
+      deallocate(m_aCH4)
       deallocate(m_aO3)
       deallocate(m_aAOD)
       ! destroy the memory for radiation vectors

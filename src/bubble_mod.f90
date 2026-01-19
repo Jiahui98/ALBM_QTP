@@ -108,7 +108,11 @@ contains
             Var2(jj,ii) = rr*Roul*G*Vab(jj,ii)/tmp
          end do
       end do
-      pH = LKpH(lake_info%itype)
+      if (m_radPars%month==7 .or. m_radPars%month==8) then
+         pH = SMpH(lake_info%itype)
+      else
+         pH = LKpH(lake_info%itype)
+      end if
       do kk = Wn2, Wch4, 1
          ! no gas exchange at water-sediment interface for code stability
          do ii = 1, WATER_LAYER, 1
@@ -116,7 +120,7 @@ contains
             vsc = m_dVsc(ii) / Roul
             depth = m_Zw(ii)
             gama = CalcSurfaceTension(temp)
-            solubility = CalcHenrySolubility(kk,temp,pH)
+            solubility = CalcHenrySolubility(lake_info%itype,kk,temp,pH)
             diffusivity = CalcGasDiffusivityInWater(kk,temp)
             do jj = 1, NRLAYER+1, 1
                rr = Vr(jj,ii) + inft
@@ -134,15 +138,22 @@ contains
    subroutine BubbleModuleCallback(dt)
       implicit none
       real(r8), intent(in) :: dt
+      !real(r8) :: tmp(NGAS), r1, r2, temp !deleted according to ABLM-update
       integer :: ii, jj, top
 
       top = m_lakeWaterTopIndex
       do ii = top, WATER_LAYER+1, 1
+         !tmp = 0.0_r8 !deleted according to ABLM-update
+         !do jj = 1, NRLAYER, 1
+            !r1 = Vr(jj,ii)
+            !r2 = Vr(jj+1,ii)
+            !tmp = tmp + 0.5e3*(Vex(:,jj,ii)+Vex(:,jj+1,ii))*(r2-r1)
+         !end do !deleted according to ALBM-update
          ! gas transfer from bubble to water
-         m_gasExchange(:,ii) = 0._r8
-         do jj = 1, NRLAYER+1, 1
-            m_gasExchange(:,ii) = m_gasExchange(:,ii) - Vex(:,jj,ii)
-         end do
+         m_gasExchange(:,ii) = 0._r8 ! changed from =tmp, according to ALBM-update
+         do jj = 1, NRLAYER+1, 1 ! added according to ALBM-update
+            m_gasExchange(:,ii) = m_gasExchange(:,ii) - Vex(:,jj,ii) ! added according to ALBM-update
+         end do ! added according to ALBM-update
       end do
       ! assume no transfer in ice layers
       m_gasExchange(:,1:top-1) = 0.0_r8
@@ -173,7 +184,7 @@ contains
       if (.NOT. isHourNode) then
          return
       end if
-      
+      !ratio = (/0.6, 0.0, 0.0, 0.4/) 
       if (m_lakeWaterTopIndex>WATER_LAYER+1) then
          m_bubbleGasCon = 0.0_r8
          return
@@ -226,6 +237,7 @@ contains
             m_bubbleGasCon(:,rIndx,top:locIndx) = 0.0_r8
          end if
       end do
+      !print *, ratio(Wch4)
    end subroutine
 
    !------------------------------------------------------------------------------
@@ -244,7 +256,7 @@ contains
       m_Rb0 = (/(minR+dr*(ii-1), ii = 1, NRLAYER+1)/)
       m_Rb0 = 1.0e-3_r8 * m_Rb0  ! mm => m
       rratio = minR / 0.1_r8
-      tdelta = 2.0_r8 / (0.1418*rratio**2 + 0.05579*rratio + 0.7794)
+      tdelta = 2.0_r8 / (0.1418*rratio**2 + 0.05579*rratio + 0.7794) ! changed 0.4 to 2.0 according to ALBM-update
       m_bubbleGasCon = 0.0_r8
       m_iceBubblePool = 0.0_r8
    end subroutine
@@ -254,7 +266,7 @@ contains
       implicit none
       real(r8), intent(out) :: con(NGAS,NRLAYER+1)    ! unit: umol/(m3*mm)
       real(r8) :: temp, gama, pressure, wb
-      real(r8) :: rr, Atmp 
+      real(r8) :: rr, Atmp ! deleted rmax, rmin, tmp1, tmp2 and added Atmp according to ALBM-update
       real(r8) :: vsc
       integer :: rIndx
 
@@ -263,18 +275,20 @@ contains
          return
       end if
 
+      !rmax = m_Rb0(NRLAYER+1) ! deleted according to ALBM-update
+      !rmin = m_Rb0(1) ! deleted according to ALBM-update
       temp = m_waterTemp(WATER_LAYER+1)
       vsc = m_dVsc(WATER_LAYER+1) / Roul
       gama = CalcSurfaceTension(temp)
       pressure = m_surfData%pressure + Roul*G*lake_info%depth
-      Atmp = 0._r8
+      Atmp = 0._r8 !tmp1 = 0.5*(rmax*rmax-rmin*rmin)*pressure + gama*(rmax-rmin)  ! changed according to ALBM-update
       do rIndx = 1, NRLAYER+1, 1
          rr = m_Rb0(rIndx)
          wb = CalcBuoyantVelocity(rr, vsc)
-         Atmp = Atmp + (pressure*rr + 2*gama) * wb
-         con(:,rindx) = m_btmbflux * (pressure*rr + 2*gama)
+         Atmp = Atmp + (pressure*rr + 2*gama) * wb ! changed according to ALBM-update
+         con(:,rindx) = m_btmbflux * (pressure*rr + 2*gama) ! changed according to ALBM-update
       end do
-      con = con / Atmp
+      con = con / Atmp ! changed according to 2024-update
    end subroutine
 
    ! Initialize the bubble radius field in water column without considering dissolution
@@ -460,8 +474,8 @@ contains
    subroutine UpdateBubbleFlux(dt)
       implicit none
       real(r8), intent(in) :: dt
-      real(r8) :: flux(NGAS), cb(NGAS)
-      real(r8) :: rr, vsc, wb
+      real(r8) :: flux(NGAS), cb(NGAS) ! changed according to ALBM-update
+      real(r8) :: rr, vsc, wb ! changed according to ALBM-update
       integer :: ii, top
 
       bubble_fluxes = 0.0_r8
@@ -472,11 +486,11 @@ contains
       top = m_lakeWaterTopIndex
       vsc = m_dVsc(top) / Roul
       flux = 0.0_r8
-      do ii = 1, NRLAYER+1, 1
-         cb = m_bubbleGasCon(:,ii,top)
-         rr = Vr(ii,top)
-         wb = CalcBuoyantVelocity(rr, vsc)
-         flux = flux + cb * wb 
+      do ii = 1, NRLAYER+1, 1 ! changed NRLAYER to NRLAYER+1 according to ALBM-update
+         cb = m_bubbleGasCon(:,ii,top) ! changed according to ALBM-update
+         rr = Vr(ii,top) ! changed according to ALBM-update
+         wb = CalcBuoyantVelocity(rr, vsc) ! changed according to ALBM-update
+         flux = flux + cb * wb ! changed according to ALBM-update
       end do
       if ( (lake_info%thrmkst==2 .and. lake_info%margin==1) .or. &
             (m_Hice<e8) ) then
@@ -489,8 +503,8 @@ contains
          ! only 10% of bubble remains in gaseous state after winter
          ! Greene et al. (2014)
          bubble_fluxes = 0.0_r8
-         m_iceBubblePool = m_iceBubblePool + 0.1 * flux * dt
-      end if
+         m_iceBubblePool = m_iceBubblePool + 0.1 * flux * dt ! changed by Lin, 2024.3
+      end if 
    end subroutine
    
 end module bubble_mod

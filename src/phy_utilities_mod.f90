@@ -11,6 +11,7 @@ module phy_utilities_mod
    use phy_const_mod
    use shr_typedef_mod,       only: SimTime, LakeInfo
    use shr_param_mod
+   use bg_const_mod
 
    interface CalcPistonVelocity
       module procedure CalcPistonVelocitySR
@@ -309,6 +310,13 @@ contains
       return
    end function
 
+   !---------------------------------------------
+   !
+   ! The calculation for heat conductivity is very complicated.
+   ! Here Lin tries to replace the function with experiment results
+   ! in Beiluhe area.
+   !
+   !---------------------------------------------
    function CalcSedHeatConductivity(poro, satLW, Kss)
       implicit none
       real(r8), intent(in) :: poro           ! porosity
@@ -318,8 +326,10 @@ contains
       real(r8) :: satIce
 
       satIce = 1.0 - satLW
-      CalcSedHeatConductivity = (Kw0**(poro*satLW)) * (Ki0**(poro*satIce)) &
-            * (Kss**(1.0-poro))
+      !CalcSedHeatConductivity = (Kw0**(poro*satLW)) * (Ki0**(poro*satIce)) &
+      !      * (Kss**(1.0-poro))
+      !  according to Yin et al., 2022
+      CalcSedHeatConductivity=(poro*satLW*Kw0**(0.5)+poro*satIce*Ki0**(0.5)+(1-poro)*Kss**(0.5))**2
       return
    end function
 
@@ -567,30 +577,32 @@ contains
       return
    end function
 
-   function CalcLatentHeatWaterAero(waterTemp, airTemp, RH, wind)
+   function CalcLatentHeatWaterAero(waterTemp, airTemp, RH, wind, ps) ! added airTemp according to ALBM-update; added ps by Lin
       implicit none
       real(r8), intent(in) :: waterTemp      ! units: K
-      real(r8), intent(in) :: airTemp        ! units: K
+      real(r8), intent(in) :: airTemp        ! units: K ! added according to ALBM-update
       real(r8), intent(in) :: RH             ! units: %
       real(r8), intent(in) :: wind           ! units: m/s
+      real(r8), intent(in) :: ps             ! units: pa  added by Lin,2024.2.16
       real(r8) :: CalcLatentHeatWaterAero
       real(r8) :: vps, vap, qs, q, Lv
-      real(r8) :: adjCe
+      real(r8) :: adjCe, Roua                ! Roua is added by Lin,2024.2.16
 
       adjCe = sa_params(Param_Hscale) * Ce
       vps = CalcSatVP(waterTemp)
-      vap = 0.01 * RH * CalcSatVP(airTemp)
+      vap = 0.01 * RH * CalcSatVP(airTemp) ! changed from vps to CalcSatVP() according to ALBM-update
       qs = CalcSpecificHumidity(vps)
       q = CalcSpecificHumidity(vap)
       Lv = GetSpecificLatentHeat4Evap(waterTemp)
+      call CalcAirDensity(airTemp, ps, Roua)
       CalcLatentHeatWaterAero = max( Roua*Lv*adjCe*wind*(qs-q), 0d0 )
       return
    end function
 
-   function CalcLatentHeatWaterPM(waterTemp, airTemp, RH, wind, ps, Rn)
+   function CalcLatentHeatWaterPM(waterTemp, airTemp, RH, wind, ps, Rn) ! added airTemp according to ALBM-update
       implicit none
       real(r8), intent(in) :: waterTemp      ! units: K
-      real(r8), intent(in) :: airTemp        ! units: K
+      real(r8), intent(in) :: airTemp        ! units: K ! added according to ALBM-update
       real(r8), intent(in) :: RH             ! units: %
       real(r8), intent(in) :: wind           ! units: m/s
       real(r8), intent(in) :: ps             ! units: pascal
@@ -600,7 +612,7 @@ contains
       real(r8) :: Ea, gama, Lv
 
       vps = CalcSatVP(waterTemp)
-      vpa = 0.01 * RH * CalcSatVP(airTemp)
+      vpa = 0.01 * RH * CalcSatVP(airTemp) ! changed from vps to CalcSatVP() according to ALBM-update
       de = 0.1 * (vps - vpa)           ! vapor pressure deficit (kPa)
       delta = 0.1 * CalcSatVPSlope(waterTemp)  ! units: kPa/K
       Ea = 6.43*(1+0.536*wind)*de      ! bulk aerodynamic expression
@@ -610,32 +622,38 @@ contains
       return
    end function
 
-   function CalcLatentHeatIce(waterTemp, airTemp, RH, wind)
+   function CalcLatentHeatIce(waterTemp, airTemp, RH, wind, ps) ! airTemp added according to ALBM-update; Lin added ps
       implicit none
       real(r8), intent(in) :: waterTemp      ! units: K
-      real(r8), intent(in) :: airTemp        ! units: K
+      real(r8), intent(in) :: airTemp        ! units: K ! added according to ALBM-update
       real(r8), intent(in) :: RH             ! units: %
       real(r8), intent(in) :: wind           ! units: m/s
+      real(r8), intent(in) :: ps             ! units: Pa
       real(r8) :: CalcLatentHeatIce
-      real(r8) :: vap, vps, qs, q, adjCe
-
-      adjCe = sa_params(Param_Hscale) * Ce
+      real(r8) :: vap, vps, qs, q, adjCe ! adjCe added according to ALBM-update
+      real(r8) :: Roua  ! added by Lin,2024.2
+      
+      call CalcAirDensity(airTemp, ps, Roua)
+      adjCe = sa_params(Param_Hscale) * Ce ! added according to ALBM-update
       vps = CalcSatVP(waterTemp)
-      vap = 0.01 * RH * CalcSatVP(airTemp)
+      vap = 0.01 * RH * CalcSatVP(airTemp) ! changed from vps to CalcSatVP() according to ALBM-update
       qs = CalcSpecificHumidity(vps)
       q = CalcSpecificHumidity(vap)
-      CalcLatentHeatIce = max( Roua*Ls*adjCe*wind*(qs-q), 0d0 )
+      CalcLatentHeatIce = max( Roua*Ls*adjCe*wind*(qs-q), 0d0 ) ! Ce changed to adjCe according to ALBM-update
       return
    end function
 
-   function CalcSensibleHeat(waterTemp, airTemp, wind)
+   function CalcSensibleHeat(waterTemp, airTemp, wind, ps) ! changed surfTemp to airTemp according to ALBM-update, so as follows
+       ! added ps, Lin 2024
       implicit none
       real(r8), intent(in) :: waterTemp      ! units: K
       real(r8), intent(in) :: airTemp        ! units: K
       real(r8), intent(in) :: wind           ! units: m/s
-      real(r8) :: adjCh
+      real(r8), intent(in) :: ps             ! units: Pa
+      real(r8) :: adjCh, Roua                ! Roua is added by Lin
       real(r8) :: CalcSensibleHeat
 
+      call CalcAirDensity(airTemp, ps, Roua)
       adjCh = sa_params(Param_Hscale) * Ch
       CalcSensibleHeat = Roua*Cpa*adjCh*wind*(waterTemp-airTemp)
       return
@@ -796,51 +814,75 @@ contains
    !         (if it is pure water, water_content = 1)
    !
    !------------------------------------------------------------------------------
-   function CalcHenrySolubility(gas, temp, pH)
+   function CalcHenrySolubility(itype, gas, temp, pH)
       implicit none
+      integer, intent(in) :: itype   ! lake type
       integer, intent(in) :: gas
       real(r8), intent(in) :: temp        ! units: K
       real(r8), intent(in) :: pH          ! units: n/a
       real(r8) :: CalcHenrySolubility     ! units: umol/(m3*Pa) (M = mole/L)
       real(r8) :: hi, kc1, kc2, par
       integer :: indx
-
-      if (gas==Wn2) then
-         CalcHenrySolubility = 6.1d-6*exp(-1300*(1/temp-1/298.0))
-      else if (gas==Wo2) then
-         if (temp>=T0 .and. temp<=T0+50) then
-            indx = int((temp-T0)/5) + 1
-            indx = min(indx, 10)
-            par = (temp - T0 - 5*indx + 5) / 5.0
-            CalcHenrySolubility = (SOLO2(indx+1)*par + SOLO2(indx)*(1-par)) &
-                                    / MasO2 / P0 / Xo2 
-         else
-            CalcHenrySolubility = 1.3d-5*exp(-1500*(1/temp-1/298.0))
-         end if
-      else if (gas==Wco2) then
+      
+     !    Lin has changed this function according to Wanninkhof, 2014, except for CO2
+     !-------------------------------------------------------------------------------
+     !if (gas==Wn2) then
+        !CalcHenrySolubility = 6.1d-6*exp(-1300*(1/temp-1/298.0)) 
+     !else if (gas==Wo2) then
+     !   if (temp>=T0 .and. temp<=T0+50) then
+     !      indx = int((temp-T0)/5) + 1
+     !      indx = min(indx, 10)
+     !      par = (temp - T0 - 5*indx + 5) / 5.0
+     !      CalcHenrySolubility = (SOLO2(indx+1)*par + SOLO2(indx)*(1-par)) &
+     !                              / MasO2 / P0 / Xo2 
+     !   else
+     !      CalcHenrySolubility = 1.3d-5*exp(-1500*(1/temp-1/298.0))
+      if (gas==Wco2) then
          CalcHenrySolubility = 3.4d-4*exp(-2400*(1/temp-1/298.0))
          hi = 10**(-pH)    ! Concentration of hydrogen ion
          ! rate constant of dissolved CO2 for first and second dissolution
-         kc1 = 4.3d-7*exp(-921.4*(1/temp-1/298.0))
-         kc2 = 4.7d-11*exp(-1787.4*(1/temp-1/298.0))
+         kc1 = 4.3d-7*exp(-921.4*(298.0-temp)/(temp*298.0))
+         kc2 = 4.7d-11*exp(-1787.4*(298.0-temp)/(temp*298.0))
          CalcHenrySolubility = CalcHenrySolubility*(1.0+kc1/hi+kc1*kc2/hi**2)
-      else if (gas==Wch4) then
-         CalcHenrySolubility = 1.3d-5*exp(-1700*(1/temp-1/298.0))
+     ! else if (gas==Wch4) then
+     !    CalcHenrySolubility = 1.3d-5*exp(-1700*(1/temp-1/298.0))
+      else
+         CalcHenrySolubility=CalcBunsenSolubility(itype,gas,temp)/(R*temp) ! mol/m3/Pa
       end if
-      CalcHenrySolubility = 1.0d+6*CalcHenrySolubility
+      CalcHenrySolubility = 1.0d+6*CalcHenrySolubility ! convert to umol/(m3*Pa)
       return
    end function
 
-   function CalcBunsenSolubility(gas, temp, pH)
+   function CalcBunsenSolubility(ii, gas, temp)! changed by Lin, according to Wanninkhof, 2014
       implicit none
+      integer, intent(in) :: ii  ! lake type, added by Lin
       integer, intent(in) :: gas
       real(r8), intent(in) :: temp        ! units: K
-      real(r8), intent(in) :: pH          ! units: n/a
-      real(r8) :: CalcBunsenSolubility    ! units: m3 / m3
-      real(r8) :: henry                   ! units: umol / (m3 * Pa)
+      !real(r8), intent(in) :: pH          ! units: n/a
+      real(r8) :: CalcBunsenSolubility    ! dimensionless Bunsen coefficient
+      !real(r8) :: henry                   ! units: umol / (m3 * Pa)
+      real(r8) :: temp100, tp100
 
-      henry = CalcHenrySolubility(gas, temp, pH)
-      CalcBunsenSolubility = henry * temp * R * 1.0d-6
+      !henry = CalcHenrySolubility(gas, temp, pH)
+      !CalcBunsenSolubility = henry * temp * R * 1.0d-6
+      !-------------------------------------------------------------------------
+      !     Lin has changed this function according to Wanninkhof, 2014, as the &
+      !     Bunsen coefficient in Wanninkhof et al.,2014(Table 2) for CO2 is not &
+      !     dimensionless, here Lin remains the previous function in CalcHenrySolubility
+      !-------------------------------------------------------------------------
+      !salinity(4) = (/0.05, 0.20, 0.85, 0.75/)
+      temp100 = temp / 100.0
+      tp100 = 100.0 / temp
+      if (gas==Wn2) then
+          CalcBunsenSolubility=exp(-59.6274+85.7661*tp100+24.3696*log(temp100)+ &
+              salinity(ii)*(-0.051580+0.026329*temp100-0.0037252*(temp100)**2))
+      else if (gas==Wo2) then
+          CalcBunsenSolubility=exp(-58.3877+85.8079*(tp100)+23.8439*log(temp100)+ &
+              salinity(ii)*(-0.034892+0.015568*temp100-0.0019387*(temp100)**2))
+      else if (gas==Wch4) then
+          CalcBunsenSolubility=exp(-68.8862+101.4956*(tp100)+28.7314*log(temp100)+ &
+              salinity(ii)*(-0.076146+0.043970*temp100-0.006872*(temp100)**2))
+      end if
       return
    end function
 
@@ -939,14 +981,15 @@ contains
       else if (T>30) then
          T = 30
       end if
+      ! Lin has changed the following parameters according to Wanninkhof, 2014
       if (gas==Wn2) then
-         CalcSchmidtNumber = 1970.7-131.45*T+4.139*T**2-0.052106*T**3
+         CalcSchmidtNumber = 2094.4-149.23*T+5.7676*T**2-0.1214*T**3+0.0010423*T**4     ! changed from 1970.7-131.45*T+4.139*T**2-0.052106*T**3
       else if (gas==Wo2) then
-         CalcSchmidtNumber = 1800.6-120.1*T+3.7818*T**2-0.047608*T**3
+         CalcSchmidtNumber = 1745.1-124.34*T+4.8055*T**2-0.10115*T**3+0.00086842*T**4   ! changed from 1800.6-120.1*T+3.7818*T**2-0.047608*T**3
       else if (gas==Wco2) then
-         CalcSchmidtNumber = 1911-113.7*T+2.967*T**2-0.02943*T**3
+         CalcSchmidtNumber = 1923.6-125.06*T+4.3773*T**2-0.085681*T**3+0.00070284*T**4       ! changed from 1911-113.7*T+2.967*T**2-0.02943*T**3
       else if (gas==Wch4) then
-         CalcSchmidtNumber = 1898-110.1*T+2.834*T**2-0.02791*T**3
+         CalcSchmidtNumber = 1909.4-120.78*T+4.1555*T**2-0.080578*T**3+0.00065777*T**4      ! changed from 1898-110.1*T+2.834*T**2-0.02791*T**3
       end if
       return
    end function
@@ -972,13 +1015,13 @@ contains
       real(r8) :: CalcGasDiffusivityInWater        ! units: m2/s
 
       if (gas==Wn2) then
-         CalcGasDiffusivityInWater = 2.57d-7*(temp/273.0)
+         CalcGasDiffusivityInWater = 2.57d-7*(temp/273.0) ! 9 changed to 7 according to ALBM-update
       else if (gas==Wo2) then
-         CalcGasDiffusivityInWater = 2.4d-7*(temp/298.0)
+         CalcGasDiffusivityInWater = 2.4d-7*(temp/298.0) ! 9 changed to 7 according to ALBM-update
       else if (gas==Wco2) then
-         CalcGasDiffusivityInWater = 1.81d-3*exp(-2032.6/temp)
+         CalcGasDiffusivityInWater = 1.81d-3*exp(-2032.6/temp) ! 6 changed to 3 according to ALBM-update
       else if (gas==Wch4) then
-         CalcGasDiffusivityInWater = 1.5d-7*(temp/298.0)
+         CalcGasDiffusivityInWater = 1.5d-7*(temp/298.0) ! 9 changed to 7 according to ALBM-update
       end if
       return
    end function
@@ -1094,7 +1137,7 @@ contains
       return
    end function
 
-   function CalcPistonVelocitySR(wind, temp, rho0, vv, Heff, zaml) 
+   function CalcPistonVelocitySR(wind, temp, rho0, vv, Heff, zaml, ps)  ! added ps by Lin, so as follows 
       implicit none
       real(r8), intent(in) :: wind           ! 10-m wind (m/s)
       real(r8), intent(in) :: temp           ! units: K
@@ -1102,10 +1145,11 @@ contains
       real(r8), intent(in) :: vv             ! kinematic viscosity
       real(r8), intent(in) :: Heff           ! W/m2
       real(r8), intent(in) :: zaml           ! m
+      real(r8), intent(in) :: ps             ! Pa
       real(r8) :: CalcPistonVelocitySR       ! m/s
       real(r8) :: k600, uts, beta, epslon
 
-      uts = CalcWaterFrictionVelocity(wind) 
+      uts = CalcWaterFrictionVelocity(wind, temp, ps) 
       beta = CalcBuoyantFlux(temp, rho0, Heff) 
       beta = min(beta, 0.0)
       epslon = -0.77*beta + 0.3*uts**3/zaml/Karman
@@ -1140,8 +1184,9 @@ contains
    ! Purpose: Calculate equilibrium gas concentration
    !
    !------------------------------------------------------------------------------
-   function CalcEQConc(gas, temp, pH, pressure)
+   function CalcEQConc(itype, gas, temp, pH, pressure)
       implicit none
+      integer, intent(in) :: itype
       integer, intent(in) :: gas
       real(r8), intent(in) :: temp           ! units: Kelvin
       real(r8), intent(in) :: pH             ! units: n/a
@@ -1149,7 +1194,7 @@ contains
       real(r8) :: CalcEQConc                 ! units: umol/m3
       real(r8) :: solubility
 
-      solubility = CalcHenrySolubility(gas,temp,pH)
+      solubility = CalcHenrySolubility(itype,gas,temp,pH)   
       CalcEQConc = solubility*pressure
       return
    end function
@@ -1417,12 +1462,13 @@ contains
       return
    end function
 
-   function CalcWaterFrictionVelocity(w10)
+   function CalcWaterFrictionVelocity(w10, Tair, ps) ! added Tair and ps by Lin, so as follows
       implicit none
-      real(r8), intent(in) :: w10
+      real(r8), intent(in) :: w10, Tair, ps
       real(r8) :: CalcWaterFrictionVelocity
-      real(r8) :: ua
+      real(r8) :: ua, Roua       ! added Roua by Lin
 
+      call CalcAirDensity(Tair, ps, Roua) ! added by Lin
       ua = sqrt(Cd10) * w10
       CalcWaterFrictionVelocity = ua * sqrt(Roua/Roul)
       return
@@ -1489,13 +1535,17 @@ contains
    !          Andersen, 2007)
    !
    !------------------------------------------------------------------------------
-   subroutine CalcTotalKineticPower(info, w10, Pkin)
+   subroutine CalcTotalKineticPower(info, w10, Pkin, Tair, ps) ! added Tair and ps by Lin
       implicit none
       type(LakeInfo), intent(in) :: info
       real(r8), intent(in) :: w10         ! 10-m wind (m/s)
       real(r8), intent(out) :: Pkin       ! units: J/s
-      real(r8) :: stress, As
+      real(r8) :: stress, As, Roua        ! added Roua,2024.2 by Lin
+      real(r8), intent(in) :: Tair, ps
 
+      !Tair = m_surfData%temp
+      !ps = m_surfData%pressure
+      call CalcAirDensity(Tair, ps, Roua) ! added by Lin,2024.2.16
       stress = Roua * Cd10 * (w10**2)  ! wind stress (N/m2)
       As = 1.0d-6 * info%Asurf
       Pkin =  As * sqrt(stress**3/Roul)
@@ -1546,4 +1596,60 @@ contains
       end if
    end subroutine
 
+   !------------------------------------------------------------------------------------------------
+   !
+   !    Purpose: Calculate air density. The air density on QTP is quite different from usual cases,
+   !    so here it should be calculated by temperature and pressure instead of an approximate value.
+   !    Added by Lin, 2024.2.16
+   !
+   !------------------------------------------------------------------------------------------------
+   subroutine CalcAirDensity(temp, pressure, Roua)
+       implicit none
+       real(r8), intent(in) :: temp, pressure !K,Pa
+       real(r8), intent(out) :: Roua !kg m-3
+    
+       Roua  = 1.293 * (pressure/P0) * (T0/temp)
+   end subroutine 
+
+   subroutine CalcTransmissivity(m_wvln, depth, trans)
+      implicit none
+      real(r8), intent(in) :: m_wvln(:)
+      real(r8), intent(in) :: depth
+      real(r8), intent(inout) :: trans(:)
+      
+      if (depth<=0.5) then
+         where (m_wvln>=340 .and. m_wvln<=900)
+            trans = (0.5-depth*0.4)*sin((m_wvln-240)*PI/700.0)
+         elsewhere
+            trans = 0.0
+         end where
+      else if (depth<=1.0) then
+         where (m_wvln>=340 .and. m_wvln<=580)
+            trans = (depth*(-0.00125)+0.00125)*m_wvln+0.325*depth-0.225
+         elsewhere (m_wvln>580 .and. m_wvln<=900)
+            trans = (0.5-depth*0.4)*sin((m_wvln-240)*PI/700.0)
+         elsewhere
+            trans = 0.0
+         end where
+      else if (depth<=3.5) then
+         where (m_wvln>=340 .and. m_wvln<=750)
+            trans = 0.12-depth/50.0
+         elsewhere (m_wvln>750 .and. m_wvln<=900)
+            trans = m_wvln*(depth-6)/7500.0+3*(6-depth)/25.0
+         elsewhere
+            trans = 0.0
+         end where
+      else if (depth<=7.0) then
+         where (m_wvln>=400 .and. m_wvln<=800)
+            trans =0.2
+         elsewhere (m_wvln>=340 .and. m_wvln<=900)
+            trans = 0.1
+         elsewhere
+            trans = 0.0
+         end where
+      else
+         trans = 0.0
+      end if
+   end subroutine
+ 
 end module phy_utilities_mod

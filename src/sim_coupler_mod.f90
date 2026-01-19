@@ -37,13 +37,15 @@ contains
       ! Run simulation during the interested period
       if (error==0) then
          call InitializeModelOutputs()
-         call ConstructActCarbonPool()
+         !call ConstructActCarbonPool() closed by Lin
          call ModuleCoupler(time, .False., error)
       end if
 
       if (error==1) then
+         print *, 'error!!'
          call SetNullModelOutputs()
       end if
+      print *,'ModelRun ends.'
    end subroutine
 
    subroutine ModuleCoupler(time, isspinup, error)
@@ -60,12 +62,12 @@ contains
       integer :: simday, ncount
       integer :: year, month, day
       logical :: isHourNode
+      logical :: isDayNode ! added by Lin, 20250903
 
       ! simulation time length
       simday = CalcRunningDays(time)
       simhour = 24 * simday
       tf = 3.6d+3 * DBLE(simhour)
-
       error = 0                     ! error flag (/=0, error)
       t = 0.0_r8                    ! the timer of simulation
       hindx = 0                     ! simulation output index
@@ -73,6 +75,7 @@ contains
       curstep = 50.0_r8             ! time step of simulation (sec)
       nextstep = MAX_OF_STEP        ! time step in the next cycle
       isHourNode = .False.          ! hourly node flag
+      isDayNode = .False.           ! daily node flag; added by Lin 20250903
 
       do while(t<tf .and. error==0)
          if(t>=3.6d+3*DBLE(hindx) .and. hindx<simhour) then
@@ -86,6 +89,9 @@ contains
                end if
             end if
             isHourNode = .True.
+            if ( MOD(hindx, INT(24, KIND(hindx))) == 0) then
+               isDayNode = .True.
+            end if
             hindx = hindx + 1
          end if
 
@@ -111,19 +117,19 @@ contains
             curstep2 = curstep
             call DiagenesisModuleSetup()
             call RungeKutta4(DiagenesisEquation, mem_ch4, adaptive_mode, SStol, &
-                             curstep2, nextstep2, m_sedSubCon, m_tmpSedSubCon)
+                             curstep2, nextstep2, m_sedSubCon, m_tmpSedSubCon) 
             curstep = min(curstep,curstep2)
             nextstep = min(nextstep,nextstep2)
          end if
          if (Carbon_Module) then
             curstep3 = curstep
-            call CarbonModuleSetup(isHourNode)
+            call CarbonModuleSetup(isHourNode,isDayNode)!changed by Lin 20250903
             call RungeKutta4(CarbonCycleEquation, mem_sub, adaptive_mode, WStol, &
                              curstep3, nextstep3, m_waterSubCon, m_tmpWaterSubCon)
             call RungeKutta4(ParticulateEquation, mem_poc, fixed_mode, WPtol, &
                              curstep3, curstep3, m_waterPOC, m_tmpWaterPOC)
             curstep = min(curstep,curstep3)
-            nextstep = min(nextstep,nextstep3)
+            nextstep = min(nextstep,nextstep3) 
          end if
          if (Bubble_Module) then
             call BubbleModuleSetup(isHourNode)
@@ -220,6 +226,10 @@ contains
       m_dch4Hist = 0.0_r4
       m_dco2Hist = 0.0_r4
       m_docHist = 0.0_r4
+      m_belowdch4 = 0.0_r4
+      m_belowdco2 = 0.0_r4
+      m_belowdo = 0.0_r4
+      m_belowdoc = 0.0_r4
       m_srpHist = 0.0_r4
       m_chlHist = 0.0_r4
       m_phytobioHist = 0.0_r4
@@ -249,6 +259,10 @@ contains
       m_dch4Hist = -9999.0_r4
       m_dco2Hist = -9999.0_r4
       m_docHist = -9999.0_r4
+      m_belowdco2 = -9999.0_r4
+      m_belowdch4 = -9999.0_r4
+      m_belowdo = -9999.0_r4
+      m_belowdoc = -9999.0_r4
       m_srpHist = -9999.0_r4
       m_chlHist = -9999.0_r4
       m_phytobioHist = -9999.0_r4
@@ -298,7 +312,20 @@ contains
          m_srpHist(:,hindx) = 1d-6 * m_waterSubCon(Wsrp,:)
          m_docHist(:,hindx) = 1d-6 * m_waterSubCon(Waqdoc,:) + &
             1d-6 * m_waterSubCon(Wtrdoc,:)
-         m_chlHist(:,hindx) = 1d-3 * sum(m_chla,1)
+         if (m_lakeWaterTopIndex > WATER_LAYER) then
+            m_belowdco2(hindx) = 1d-6 * m_waterSubCon(Wco2,WATER_LAYER+1) ! added by Lin, 20240301
+            m_belowdch4(hindx) = 1d-6 * m_waterSubCon(Wch4,WATER_LAYER+1)
+            m_belowdo(hindx) = 1d-6 * m_waterSubCon(Wo2,WATER_LAYER+1)
+            m_belowdoc(hindx) = 1d-6 * m_waterSubCon(Waqdoc,WATER_LAYER+1) + &
+              1d-6 * m_waterSubCon(Wtrdoc,WATER_LAYER+1)  
+         else
+            m_belowdco2(hindx) = 1d-6 * m_waterSubCon(Wco2,m_lakeWaterTopIndex+1) ! added by Lin, 20240301 
+            m_belowdch4(hindx) = 1d-6 * m_waterSubCon(Wch4,m_lakeWaterTopIndex+1)
+            m_belowdo(hindx) = 1d-6 * m_waterSubCon(Wo2,m_lakeWaterTopIndex+1)
+            m_belowdoc(hindx) = 1d-6 * m_waterSubCon(Waqdoc,m_lakeWaterTopIndex+1) + &
+               1d-6 * m_waterSubCon(Wtrdoc,m_lakeWaterTopIndex+1) 
+         end if
+         m_chlHist(:,hindx) = 1d-3 * sum(m_chla,1) ! changed according to ALBM-update
          m_phytobioHist(:,hindx) = 1d-6 * sum(m_waterPOC,1)
       end if
       if (Bubble_Module) then
@@ -317,6 +344,7 @@ contains
       integer, intent(in) :: lakeId
       type(SimTime), intent(in) :: time
 
+      print *, 'lakeId = ', lakeId
       call WriteData(lakeId, 'zw', m_Zw)
       call WriteData(lakeId, 'zs', m_Zs)
       if (Thermal_Module) then
@@ -343,6 +371,10 @@ contains
          call WriteData(lakeId, time, 'fco2', m_fco2Hist)
          call WriteData(lakeId, time, 'chl', m_chlHist)
          call WriteData(lakeId, time, 'phytobio', m_phytobioHist)
+         call WriteData(lakeId, time, 'belowdco2', m_belowdco2)! added by Lin
+         call WriteData(lakeId, time, 'belowdch4', m_belowdch4)
+         call WriteData(lakeId, time, 'belowdo', m_belowdo)
+         call WriteData(lakeId, time, 'belowdoc', m_belowdoc)
       end if
    end subroutine
 

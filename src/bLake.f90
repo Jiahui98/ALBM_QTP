@@ -14,6 +14,7 @@ program bLake
    use bayesian_mod,    only : RunMonteCarlo
    use sensitivity_mod, only : RunSensitivity
    use shr_ctrl_mod
+   use shr_param_mod
    use mpi
 
    implicit none

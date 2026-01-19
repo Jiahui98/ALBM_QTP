@@ -9,16 +9,15 @@ module sensitivity_mod
    use sim_coupler_mod
    use read_data_mod
    use io_utilities_mod
-#ifdef USE_INTEL_COMPILER
-   use ifport
-#endif
+   !use ifport 
    use mpi
 
    implicit none
    private
    public :: RunSensitivity 
    ! # of output variables
-   integer, parameter :: NOUT = 4
+   integer, parameter :: NOUT = 9 !changed by Lin,2024
+   ! 9 for ch4, 12 for co2.
    ! current sample Id 
    integer :: cur_sample
 
@@ -32,7 +31,7 @@ contains
       real(r8), allocatable :: results(:,:)
       real(r8), allocatable :: sirs(:,:)
       integer, allocatable :: sampleIds(:)
-      integer, parameter :: ndid = 400
+      integer :: ndid ! changed by Lin 20250904
       integer :: ii, jj, cnt, minid, maxid, err
       integer :: sampleId, idx, nsample, itmp
       integer :: sample_next_range(2)
@@ -44,6 +43,7 @@ contains
       maxid = maxval(sample_range)
       nsample = maxid - minid + 1
 
+      ndid = numprocs ! changed by Lin 20250904
       if (masterproc) then
          print "(A, I0, A, I0)", 'Run samples from ', minid, ' to ', maxid
       end if
@@ -58,7 +58,8 @@ contains
             call GetFullFileName('bLakeJob.sub', script)
             script = "sbatch " // trim(script)
             err = system(trim(script))
-            print "(A, I0)", "A new job is submitted. Return = ", err
+            print "(A, I0)", "A new job is submitted. Return = ", err, "(exit=",err/256,")"
+            if (err/=0) print *, "WARNING: sbatch filed (non-zero exit). Command:", trim(script)
             sample_range = sample_next_range
          end if
       end if
@@ -94,10 +95,11 @@ contains
          sampleId = sampleIds(taskid+1)
          cur_sample = sampleId
          call MonteCarloSimulation( sampleId, samples(sampleId,:), sir )
-         do jj = 1, NOUT, 1
-            call MPI_GATHER(sir(jj), 1, MPI_REAL8, sirs(jj,:), 1, MPI_REAL8, &
-               0, MPI_COMM_WORLD, err)
-         end do
+         call MPI_GATHER(sir,NOUT,MPI_REAL8,sirs,NOUT,MPI_REAL8,0,MPI_COMM_WORLD,err) ! added by Lin, 20250904
+    !     do jj = 1, NOUT, 1
+    !        call MPI_GATHER(sir(jj), 1, MPI_REAL8, sirs(jj,:), 1, MPI_REAL8, &
+    !           0, MPI_COMM_WORLD, err)
+    !     end do
          if (masterproc) then
             do ii = 1, numprocs, 1
                idx = sampleIds(ii) - minid + 1 
@@ -130,9 +132,7 @@ contains
       integer :: i4ret, lakeId, error
       real(r8) :: sir(NOUT)
 
-#ifdef USE_INTEL_COMPILER
-      i4ret = SIGNALQQ(SIG$FPE, hand_fpe)
-#endif
+!      i4ret = SIGNALQQ(SIG$FPE, hand_fpe)
       ! read lake information (i.e. depth, location ...)
       lakeId = lake_range(1)
       call ReadLakeName(lakeId)
@@ -152,6 +152,7 @@ contains
       odata = sir
       print "(A, I0, A, I0, A, E14.6)", "Sample ", sampleId, &
             ": Error ", error
+      print *, sampleId, " odata =", odata(:) 
       call FinalizeSimulation()
    end subroutine
 
@@ -167,26 +168,27 @@ contains
    subroutine GetSensitivityReturn(odata)
       implicit none
       real(r8), intent(out) :: odata(NOUT)
-      real(r8), allocatable :: tmp_zs(:)
-      real(r8), allocatable :: tmp_zb(:)
-      real(r8), allocatable :: tmp_zc(:)
-      real(r8) :: avg_zs, avg_zb, avg_zc 
-      real(r8) :: avg_co2, co2_hr(1), zco2(1)
+!      real(r8), allocatable :: tmp_zs(:)
+!      real(r8), allocatable :: tmp_zb(:)
+!      real(r8), allocatable :: tmp_zc(:)
+!      real(r8) :: avg_zs, avg_zb, avg_zc 
+!      real(r8) :: avg_fco2, avg_dco2, avg_doc, avg_do !, co2_hr(1), zco2(1)
+      real(r8) :: avg_fch4d, avg_fch4e, avg_dch4
       integer :: JDN0, JDN1, JDNb, JDNe
-      integer :: ii, jj, izs, izb, izc
+      integer :: ii, jj!, izs, izb, izc
       integer :: idx0, idx1, nt1, nt2
       integer :: iceon, iceoff
 
       odata = 0.0_r8
       ! get the z indices
-      izs = count(m_Zw<=5)
-      izb = count(m_Zw>=10)
-      izc = count(m_Zw<=8.42)
-      allocate(tmp_zs(izs))
-      allocate(tmp_zb(izb))
-      allocate(tmp_zc(izc))
-      izb = WATER_LAYER + 2 - izb
-      ! get the mean annual values
+!      izs = count(m_Zw<=5)
+!      izb = count(m_Zw>=10)
+!      izc = count(m_Zs>=0)!changed by linjiahui,20230704     
+!      allocate(tmp_zs(izs))
+!      allocate(tmp_zb(izb))
+!      allocate(tmp_zc(izc))
+!      izb = WATER_LAYER + 2 - izb
+     ! get the mean annual values
       call Date2JDN(Start_Year, Start_Month, Start_Day, JDN0)
       call Date2JDN(End_Year, End_Month, End_Day, JDN1)
       nt1 = 0
@@ -194,53 +196,76 @@ contains
       do ii = Start_Year, End_Year, 1
          call Date2JDN(ii, 5, 15, JDNb)          
          call Date2JDN(ii, 11, 15, JDNe)
-         if (JDNb>=JDN0 .and. JDNe<=JDN1) then
-            nt1 = nt1 + 1
-            idx0 = 24 * (JDNb - JDN0) + 1
-            idx1 = 24 * (JDNe - JDN0)
+         nt1 = 0
+         nt2 = nt2+1
+         do jj = 5, 9, 2
+            call Date2JDN(ii, jj, 1, JDNb)
+            call Date2JDN(ii, jj+2, 1, JDNe)      !for co2 & ch4
+            if (JDNb>=JDN0 .and. JDNe<=JDN1) then
+               nt1 = nt1 + 1
+               idx0 = 24 * (JDNb - JDN0) + 1
+               idx1 = 24 * (JDNe - JDN0)
             ! temperature
-            call Mean(DBLE(m_tempwHist(1:izs,idx0:idx1)), 2, tmp_zs)
-            call Mean(DBLE(m_tempwHist(izb:WATER_LAYER+1,idx0:idx1)), &
-               2, tmp_zb)
-            call WeightMean(tmp_zs, m_dZw(1:izs), avg_zs)
-            call WeightMean(tmp_zb, m_dZw(izb:WATER_LAYER+1), avg_zb)
-            odata(1) = odata(1) + avg_zs 
-            odata(2) = odata(2) + avg_zb
-         end if
-         call Date2JDN(ii, 1, 1, JDNb)
-         call Date2JDN(ii, 12, 31, JDNe)
-         if (JDNb>=JDN0 .and. JDNe<=JDN1) then
-            nt2 = nt2 + 1
-            idx0 = 24 * (JDNb - JDN0) + 1
-            idx1 = 24 * (JDNe - JDN0) + 24
-            ! ice-on and ice-off DOY 
-            iceoff = 1 
-            do jj = idx0, idx1, 1
-               if (m_iceHist(jj)<1d-6) then
-                  iceoff = INT((jj-idx0)/24.0) + 1
-                  exit 
-               end if
-            end do
-            iceon = JDNe - JDNb + 1 
-            do jj = idx1, idx0, -1
-               if (m_iceHist(jj)<1d-6) then
-                  iceon = INT((jj-idx0)/24.0) + 1 
-                  exit
-               end if
-            end do
-            odata(3) = odata(3) + DBLE(iceon)
-            odata(4) = odata(4) + DBLE(iceoff)
-         end if
+        !    call Mean(DBLE(m_tempwHist(1:izs,idx0:idx1)), 2, tmp_zs)
+        !    call Mean(DBLE(m_tempwHist(izb:WATER_LAYER+1,idx0:idx1)), &
+        !       2, tmp_zb)
+        !    call WeightMean(tmp_zs, m_dZw(1:izs), avg_zs)
+        !    call WeightMean(tmp_zb, m_dZw(izb:WATER_LAYER+1), avg_zb)
+            ! soil temperature
+          !  call Mean(DBLE(m_tempsHist(1:izc,idx0:idx1)),2,tmp_zc)!added by linjiahui,20230704
+          !  call WeightMean(tmp_zc, m_dZs(1:izc), avg_zc)!added by linjiahui,20230704
+          !  odata(1) = odata(1) + avg_zs  
+          !  odata(2) = odata(2) + avg_zb
+          !  odata(3) = odata(3) + avg_zc!changed by linjiahui,20230704
+            ! co2
+           !    call Mean(DBLE(m_fco2Hist(idx0:idx1)), avg_fco2)
+           !    call Mean(DBLE(m_belowdco2(idx0:idx1)), avg_dco2)
+           !    call Mean(DBLE(m_belowdoc(idx0:idx1)), avg_doc)
+           !    call Mean(DBLE(m_belowdo(idx0:idx1)), avg_do)
+            ! ch4
+               call Mean(DBLE(m_fch4dHist(idx0:idx1)), avg_fch4d)
+               call Mean(DBLE(m_fch4eHist(idx0:idx1)), avg_fch4e)
+               call Mean(DBLE(m_belowdch4(idx0:idx1)), avg_dch4)
+               odata(nt1) = odata(nt1) + avg_fch4d!avg_fco2
+               odata(nt1+3) = odata(nt1+3) + avg_fch4e!avg_dco2
+               odata(nt1+6) = odata(nt1+6) + avg_dch4!avg_doc
+           !    odata(nt1+9) = odata(nt1+9) + avg_do!only when co2
+            end if
+ !        call Date2JDN(ii, 1, 1, JDNb)
+ !        call Date2JDN(ii, 12, 31, JDNe)
+ !        if (JDNb>=JDN0 .and. JDNe<=JDN1) then
+ !           nt2 = nt2 + 1
+ !           idx0 = 24 * (JDNb - JDN0) + 1
+ !           idx1 = 24 * (JDNe - JDN0) + 24
+ !           ! ice-on and ice-off DOY 
+ !           iceoff = 1 
+ !           do jj = idx0, idx1, 1
+ !              if (m_iceHist(jj)<1d-6) then
+ !                 iceoff = INT((jj-idx0)/24.0) + 1
+ !                 exit 
+ !              end if
+ !           end do
+ !           iceon = JDNe - JDNb + 1 
+ !           do jj = idx1, idx0, -1
+ !              if (m_iceHist(jj)<1d-6) then
+ !                 iceon = INT((jj-idx0)/24.0) + 1 
+ !                 exit
+ !              end if
+ !           end do
+ !           odata(4) = odata(4) + DBLE(iceon)!changed by linjiahui,20230704
+ !           odata(5) = odata(5) + DBLE(iceoff)
+ !        end if
+         end do
       end do
-      if (nt1>0) then
-         odata(1:2) = odata(1:2) / DBLE(nt1)
-      end if
+ !     if (nt1>0) then
+ !        odata(1:3) = odata(1:3) / DBLE(nt1)
+ !     end if
       if (nt2>0) then
-         odata(3:4) = odata(3:4) / DBLE(nt2)
+         odata(:) = odata(:) / DBLE(nt2)
       end if
-      deallocate(tmp_zs)
-      deallocate(tmp_zb)
-      deallocate(tmp_zc)
+!      deallocate(tmp_zs)
+!      deallocate(tmp_zb)
+!      deallocate(tmp_zc)
    end subroutine
 
    !------------------------------------------------------------------------------
@@ -248,38 +273,5 @@ contains
    ! Purpose: some utilities for exceptions: SIG$FPE, SIG$ABORT, SIG$SEGV
    !
    !------------------------------------------------------------------------------
-#ifdef USE_INTEL_COMPILER
-   function hand_fpe(sigid, except)
-      !DEC$ ATTRIBUTES C :: hand_fpe
-      use ifport
-      !use ifcore
-      INTEGER(4) :: hand_fpe
-      INTEGER(2) :: sigid, except
-
-      if (sigid/=SIG$FPE) then
-         hand_fpe = 1
-         return
-      end if
-      select case(except)
-         case( FPE$INVALID )
-            print *, ' Floating point exception: Invalid number'
-         case( FPE$DENORMAL )
-            print *, ' Floating point exception: Denormalized number'
-         case( FPE$ZERODIVIDE )
-            print *, ' Floating point exception: Zero divide'
-         case( FPE$OVERFLOW )
-            print *, ' Floating point exception: Overflow'
-         case( FPE$UNDERFLOW )
-            print *, ' Floating point exception: Underflow'
-         case( FPE$INEXACT )
-            print *, ' Floating point exception: Inexact precision'
-         case default
-            print *, ' Floating point exception: Non-IEEE type'
-      end select
-      !CALL TRACEBACKQQ(trim(header), USER_EXIT_CODE=-1)
-      print *, 'failed sample ', cur_sample, sa_params 
-      hand_fpe = 1
-   end function
-#endif
 
 end module sensitivity_mod

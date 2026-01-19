@@ -20,11 +20,11 @@ module phy_const_mod
    ! gravitational acceleration (m/s2)
    real(r8), parameter :: G = 9.8
    ! density of water, ice and snow (kg/m3)
-   real(r8), parameter :: Roul = 1000.0, Roui = 931.0
+   real(r8), parameter :: Roul = 1000.0, Roui = 917.0 !changed from 931 by Lin according to Yin et al., 2022
    ! density of gray ice (kg/m3)
    real(r8), parameter :: Roue = 890.0
    ! density of air (kg/m3)
-   real(r8), parameter :: Roua = 1.225
+   !real(r8), parameter :: Roua = 1.225 ! closed by Lin, 2024.2.16
    ! Heat capacity of water, ice and snow at constant pressure (J/(K*kg))
    real(r8), parameter :: Cpl = 4.2d+3, Cpi = 2.1d+3, Cpn = 2.1d+3
    ! Heat capacity of dry air at constant pressure (J/(K*kg))
@@ -36,14 +36,14 @@ module phy_const_mod
    ! Kelvin degree of 0 Celsius (K)
    real(r8), parameter :: T0 = 273.15
    ! Standard atmosphere pressure (Pa)
-   real(r8), parameter :: P0 = 98150.0 
+   real(r8), parameter :: P0 = 101325 !P0 = 98150.0 changed by Lin 2024.2.16 
    ! Thermal conductivity of ice, water and snow (W/(m*K))
-   real(r8), parameter :: Ki0 = 2.2156, Kw0 = 0.558, Kn0 = 0.27
+   real(r8), parameter :: Ki0 = 2.18, Kw0 = 0.58, Kn0 = 0.27 !Ki0 = 2.2156, Kw0 = 0.558, Kn0 = 0.27 changed by Lin 20240212 according to Yin et al., 2022
    real(r8), parameter :: Ke0 = 2.0
    ! Thermal conductivity of air (W/(m*K))
    real(r8), parameter :: Ka0 = 0.0234
    ! Thermal conductivity of peat and mineral soils (W/m/K)
-   real(r8), parameter :: Kpet = 0.25, Kmnr = 1.3
+   !real(r8), parameter :: Kpet = 0.25, Kmnr = 1.3
    ! Stefan-Boltzmann constant (W/(m2*K4))
    real(r8), parameter :: Stefan = 5.6704d-8
    ! Ideal-gas constant (J/(mol*K))
@@ -60,24 +60,30 @@ module phy_const_mod
    real(r8), parameter :: Epsw = 0.97, Epsi = 0.97, Epsn = 0.94
    real(r8), parameter :: Epse = 0.94
    ! Absorption extinction coefficient (m-1) of snow and gray ice
-   real(r8), parameter :: EtanVIS = 6.0, EtanIR = 40.0
-   real(r8), parameter :: EtaeVIS = 3.75, EtaeIR = 40.0
+   real(r8), parameter :: EtanVIS = 9.72, EtanIR = 40.0   ! changed according to Zhang, 2021
+   real(r8), parameter :: EtaeVIS = 3.09, EtaeIR = 40.0
+   real(r8), parameter :: EtaiVIS = 2.26, EtaiIR = 16.0 ! added by Lin, according to Zhang, 2021
+!   real(r8), parameter :: EtanVIS = 6.0, EtanIR = 40.0
+!   real(r8), parameter :: EtaeVIS = 3.75, EtaeIR = 40.0
+
    ! Refractive index of water, ice and gray ice
    real(r8), parameter :: Rfrw = 1.333, Rfri = 1.309, Rfre = 1.309
    ! Surface albedo of gray ice and ice
-   real(r8), parameter :: Alphae = 0.40, Alphai = 0.55
+   real(r8), parameter :: Alphaw = 0.05, Alphae = 0.20, Alphai = 0.28 !Alphae = 0.40, Alphai = 0.55 changed by Lin, 20240213; according to Zhang et al., 2021, master thesis
+   ! deleted Alphae, but added Alphaw
    ! N2, O2, CO2 and CH4 mixing ratio in the atmosphere
    real(r8), parameter :: Xn2 = 0.78, Xo2 = 0.21
    real(r8), parameter :: Xco2 = 380.0d-6, Xch4 = 1800.0d-9
    ! Mole mass of N2, O2, CO2 and CH4 (g/mol)
    real(r8), parameter :: MasN2 = 28, MasO2 = 32, MasCO2 = 44, MasCH4 = 16
    ! Mole mass of carbon and phosphorus
-   real(r8), parameter :: MasC = 12, MasP = 31
+   real(r8), parameter :: MasC = 12, MasP = 31, MasN = 14
+   real(r8), parameter :: MasSO4 = 96, MasNO3 = 62
    ! O2 solubility from Engineering toolbox (mg/L)
    real(r8), parameter :: SOLO2(11) = (/14.6, 12.8, 11.3, 10.1, 9.1, 8.3, &
                            7.6, 7.0, 6.5, 6.0, 5.6/)
    ! relative concentration at which ebullition begins
-   real(r8), parameter :: Ae = 0.4
+   real(r8), parameter :: Ae = 0.7
    ! bubble gas release rate after thawing or ice breakage (units: s-1)
    real(r8), parameter :: Blr = 7.7d-7
    ! Hydrodynamics parameters are from Wuest and Lorke (2003),
@@ -94,4 +100,11 @@ module phy_const_mod
    real(r8), parameter :: Prandtl = 1.0
    ! PAR radiation conversion factor from W/m2 to umol/m2/s
    real(r8), parameter :: fconvPAR = 4.6
+   ! soil type identifier
+   !integer, parameter :: clay=001, peat=002, mudstone=003    ! added by Lin, according to Ling&Wu, 2017 
+   !real(r8), parameter :: KsFrz(3) = (/1.92, 2.12, 1.57/)   ! added by Lin, according to Ling&Wu, 2017
+   !real(r8), parameter :: KsUnfrz(3) = (/1.35, 1.42, 1.28/)   !thermal conductivity(W m-1 K-1) 
+   !real(r8), parameter :: RCpsFrz(3) = (/2.459d6, 2.543d6, 1.872d6/)    ! volumetric heat capacity(J m-3 K-1)
+   !real(r8), parameter :: RCpsUnfrz(3) = (/3.178d6, 3.450d6, 2.457d6/)
+   !real(r8), parameter :: Rous(3) = (/1600, 1400, 1600/)  ! kg m-3
 end module phy_const_mod

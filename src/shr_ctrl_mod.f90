@@ -6,7 +6,7 @@ module shr_ctrl_mod
    use shr_typedef_mod,    only : LakeInfo
 
    public
-   ! Real infinitestimal valu
+   ! Real infinitestimal value
    real(r8), parameter :: SHR_CTRL_E8 = 1.d-8
    ! Infinite numble
    real(r8), parameter :: INFINITE_E8 = 1.d+30
@@ -15,7 +15,7 @@ module shr_ctrl_mod
    ! Relative tolerance of Runge-Kutta method
    real(r8), parameter :: TOL_E8 = 1.d-6
    ! thickness of sediments (m)
-   real(r8), parameter :: SED_DEPTH = 25.0
+   real(r8), parameter :: SED_DEPTH = 3.0 !changed by Lin 20250219
    ! the maximum step length (s)
    integer, parameter :: MAX_OF_STEP = 1800
    ! N2, O2, CO2 and CH4
@@ -25,13 +25,13 @@ module shr_ctrl_mod
    ! N2, O2, CO2, CH4, and TP
    integer, parameter :: NSSUB = 5
    ! # of phytoplankton function groups
-   integer, parameter :: NPOC = 2
+   !integer, parameter :: NPOC = 2   ! deleted by Lin
    ! # of dissolved organic carbon groups
    integer, parameter :: NDOC = 2
    ! # of carbon pools
-   integer, parameter :: NPOOL = 2
+   ! integer, parameter :: NPOOL = 2 ! deleted by Lin
    ! # of lake types
-   integer, parameter :: NLAKTYPE = 1
+   integer, parameter :: NLAKTYPE = 4 ! changed by Lin
    ! Wavelength number
    integer, parameter :: NSPCTM = 2002
    ! Tolerance of temperature (units: K)
@@ -43,7 +43,7 @@ module shr_ctrl_mod
    real(r8), parameter :: WStol(NWSUB) = (/1.d-1, 1.d-1, 1.d-2, &
                                     1.d-4, 1.d-2, 1.0d-1, 1.0d-1/)
    ! Tolerance of water particulate concentration (units: umol/m3)
-   real(r8), parameter :: WPtol(NPOC) = (/1.d-1, 1.d-1/)
+   real(r8), parameter :: WPtol = 1.d-1   ! WPtol(NPOC) = (/1.d-1, 1.d-1/) ! changed by Lin
    ! Tolerance of bubble gas concentration (units: umol/m3/mm)
    real(r8), parameter :: Bubtol = 1.0d-6
    ! general group
@@ -83,6 +83,7 @@ module shr_ctrl_mod
    character(cx) :: rsds_file = ""
    character(cx) :: rlds_file = ""
    character(cx) :: wind_file = ""
+   character(cx) :: gw_file = ""
    ! archive group
    character(len=32) :: archive_tstep = ""
    character(cx) :: archive_dir = ""
@@ -91,6 +92,7 @@ module shr_ctrl_mod
    character(cx) :: gas_dir = ""
    character(cx) :: albedo_dir = ""
    character(cx) :: co2_file = ""
+   character(cx) :: ch4_file = ""
    character(cx) :: o3_file = ""
    character(cx) :: aod_file = ""
    ! lake information object

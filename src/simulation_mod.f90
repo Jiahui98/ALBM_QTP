@@ -11,9 +11,6 @@ module simulation_mod
    use shr_typedef_mod
    use sim_coupler_mod
    use read_data_mod
-#ifdef USE_INTEL_COMPILER
-   use ifport
-#endif
    use mpi
 
    private
@@ -26,7 +23,7 @@ contains
       integer, intent(in) :: numprocs
       character(len=*), intent(in) :: arg
       integer, allocatable :: lakeIds(:)
-      integer, parameter :: ndid = 200
+      integer, parameter :: ndid = 1  ! changed by Lin, 2024
       integer :: lake_next_range(2)
       integer :: lakeId, err, minid, maxid
       integer :: nlake, istep, ii, itmp
@@ -61,7 +58,7 @@ contains
       
       do istep = 1, nlake, numprocs
          if (masterproc) then
-            if (nlake-istep+1>=numprocs) then
+          if (nlake-istep+1>=numprocs) then
                lakeIds = (/(ii, ii = minid+istep-1, minid+istep+numprocs-2)/)
             else
                itmp = nlake - istep + 1
@@ -146,6 +143,14 @@ contains
                                'g m-3', -9999.0_r4)
          call CreateOutputFile(time, NWLAYER+1, 'phytobio', 'phytoplankton biomass', &
                                'mole m-3', -9999.0_r4)
+         call CreateOutputFile(time, 'belowdco2', 'dissolved CO2', &
+                               'mole m-3', -9999.0_r4)
+         call CreateOutputFile(time, 'belowdch4', 'dissolved methane', &
+                               'mole m-3', -9999.0_r4)  
+         call CreateOutputFile(time, 'belowdo', 'dissolved oxygen', &
+                               'mole m-3', -9999.0_r4)
+         call CreateOutputFile(time, 'belowdoc', 'dissolved organic carbon', &
+                               'mole m-3', -9999.0_r4)
       end if
    end subroutine
 
@@ -157,9 +162,6 @@ contains
       real(r8) :: OptParams(NPARAM)
       integer :: i4ret
 
-#ifdef USE_INTEL_COMPILER
-      i4ret = SIGNALQQ(SIG$FPE, hand_fpe)
-#endif
       ! read lake information (i.e. depth, location ...)
       call ReadLakeName(lakeId)
       call ReadOptimumParameters(OptParams)
@@ -171,47 +173,11 @@ contains
                      Start_Year, Start_Month, Start_Day)
       call InitializeSimulation()
       call ModelRun(lakeId, time, spinup, error)
+      !print *, 'coming into Archive'
       call ArchiveModelOutput(lakeId, time)
+      !print *, 'ArchiveModuleOutput ends'
       call FinalizeSimulation()
+      !print *, 'Finalize ends'
    end subroutine
 
-   !------------------------------------------------------------------------------
-   !
-   ! Purpose: some utilities for exceptions
-   !
-   !------------------------------------------------------------------------------
-#ifdef USE_INTEL_COMPILER
-   function hand_fpe(sigid, except)
-      !DEC$ ATTRIBUTES C :: hand_fpe
-      use ifport
-      INTEGER(4) :: hand_fpe
-      INTEGER(2) :: sigid, except
-
-      if (sigid/=SIG$FPE) then
-         print "('The hand_fpe is not for signal ', I0)", sigid
-         hand_fpe = 1
-         return
-      end if
-      select case(except)
-         case( FPE$INVALID )
-            print *, ' Floating point exception: Invalid number'
-         case( FPE$DENORMAL )
-            print *, ' Floating point exception: Denormalized number'
-         case( FPE$ZERODIVIDE )
-            print *, ' Floating point exception: Zero divide'
-         case( FPE$OVERFLOW )
-            print *, ' Floating point exception: Overflow'
-         case( FPE$UNDERFLOW )
-            print *, ' Floating point exception: Underflow'
-         case( FPE$INEXACT )
-            print *, ' Floating point exception: Inexact precision'
-         case default
-            print *, ' Floating point exception: Non-IEEE type'
-      end select
-      !CALL TRACEBACKQQ(trim(header), USER_EXIT_CODE=-1)
-      print *, 'lake failed: ', lake_info 
-      hand_fpe = 1
-   end function
-#endif
-
-end module
+end  module

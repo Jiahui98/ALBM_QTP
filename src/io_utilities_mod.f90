@@ -174,6 +174,7 @@ contains
       integer, intent(in) :: istatus
 
       if(istatus /= NF90_NOERR) then
+         !print *, "Error opening file in subroutine ", trim(fid)
          call Endrun(fid, nf90mpi_strerror(istatus))
       end if
    end subroutine
@@ -229,11 +230,7 @@ contains
       logical :: isexist
 
       call GetFullFileName(archive_dir, fulldir)
-#ifdef USE_INTEL_COMPILER
-      inquire(directory=trim(fulldir), exist=isexist)
-#else
       inquire(file=trim(fulldir)//'.', exist=isexist)
-#endif
       if (.not. isexist) then
          command = 'mkdir ' // fulldir
          call system(trim(command))
@@ -253,11 +250,7 @@ contains
       write(tmpstr,"(I4, I2.2, I2.2, A, I4, I2.2, I2.2)") time%year0, &
             time%month0, time%day0, '_', time%year1, time%month1, time%day1
       call GetFullFileName(archive_dir, fulldir)
-#ifdef USE_INTEL_COMPILER
-      inquire(directory=trim(fulldir), exist=isexist)
-#else
       inquire(file=trim(fulldir)//'.', exist=isexist)
-#endif
       if (.not. isexist) then
          command = 'mkdir ' // fulldir
          call system(trim(command))

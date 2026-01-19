@@ -78,7 +78,30 @@ contains
       do ii = 1, NSLAYER+1, 1
          satLW = CalcSoilWaterSaturation(m_sedTemp(ii))
          m_Ks(ii) = CalcSedHeatConductivity(Porosity, satLW, Kss)
-      end do
+         ! changed following according to Ling&Wu, 2017
+      !   if (m_Zs(ii)<=30.0) then
+      !      if (m_sedIce(ii)>e8) then
+      !         m_Ks(ii) = CalcSedHeatConductivity(Porosity, satLW, KsFrz(clay))
+      !      else
+      !         m_Ks(ii) = CalcSedHeatConductivity(Porosity, satLW, KsUnfrz(clay))
+      !      end if
+         !   roused = Rous(1)
+         !else if (m_Zs(ii)<=70) then
+      !      if (m_sedIce(ii)>e8) then
+      !         m_Ks(ii) = CalcSedHeatConductivity(Porosity, satLW, KsFrz(peat))
+      !      else
+      !         m_Ks(ii) = CalcSedHeatConductivity(Porosity, satLW, KsUnfrz(peat))
+      !      end if
+         !   roused = Rous(2)
+         !else
+      !      if (m_sedIce(ii)>e8) then
+      !         m_Ks(ii) = CalcSedHeatConductivity(Porosity, satLW, KsFrz(mudstone))
+      !      else
+      !         m_Ks(ii) = CalcSedHeatConductivity(Porosity, satLW, KsUnfrz(mudstone))
+      !      end if
+         !   roused = Rous(3)
+         !end if      
+      end do 
       Cvt = Cps*Rous*(1.0-Porosity) + Cpl*Roul*(Porosity-m_sedIce) &
             + Cpi*Roui*m_sedIce
       m_Ks = m_Ks / Cvt
@@ -112,8 +135,8 @@ contains
       do ii = 1, NSLAYER+1, 1
          if(ii==1) then
             ! suppress the rad item because it causes unexpected warming
-            ! rad = m_Iab(WATER_LAYER+2) / m_dZs(ii) / Cvt(ii)
-            rad = 0.0_r8
+            rad = m_Iab(WATER_LAYER+2) / m_dZs(ii) / Cvt(ii)
+            !rad = 0.0_r8
             aa = 0.5*(m_Ks(ii) + m_Ks(ii+1))
             dT1 = (temp(ii+1) - temp(ii)) / (m_Zs(ii+1) - m_Zs(ii))
             dtemp(ii) = (aa*dT1 - qt) / m_dZs(ii) + rad 
@@ -138,23 +161,32 @@ contains
    !------------------------------------------------------------------------------
    subroutine AdjustIceTempForSediment()
       implicit none
-      real(r8) :: tmp1, tmp2, Porosity, Cps
+      real(r8) :: tmp1, tmp2, Porosity, Cps, unfrz   ! Lin added unfrz, as the fraction of unfrozen water
       integer :: ii
 
       Porosity = sa_params(Param_Por)
       Cps = sa_params(Param_Cps)
       do ii = 1, NSLAYER+1, 1             ! Sediment freezing
-         if (m_sedIce(ii)<Porosity-e8 .and. m_sedTemp(ii)<T0-e8) then
+         if (ii == 1 .or. ii == 2) then
+             unfrz = Porosity * 0.07 * abs(T0 - m_sedTemp(ii))**(-0.17)  
+             ! soil water can hardly freeze entirely. Here changed according to Yin et al., 2022; Yu, master thesis, 2019
+         else
+             unfrz = Porosity * 0.12 * abs(T0 - m_sedTemp(ii))**(-0.15) 
+         end if
+         if (m_sedIce(ii)<Porosity-unfrz-e8 .and. m_sedTemp(ii)<T0-e8) then   
             tmp1 = Cpi*(T0-m_sedTemp(ii))*m_sedIce(ii) +       &
             Cpl*(T0-m_sedTemp(ii))*(Porosity-m_sedIce(ii)) +   &
             Cps*(T0-m_sedTemp(ii))*(1.0-Porosity)
-            tmp2 = Lf*(Porosity-m_sedIce(ii))
+            tmp2 = Lf*(Porosity-unfrz-m_sedIce(ii))
             if (tmp2>tmp1) then
                m_sedIce(ii) = m_sedIce(ii) + tmp1/Lf
                m_sedTemp(ii) = T0
             else
-               m_sedIce(ii) = Porosity
-               m_sedTemp(ii) = T0 - (tmp1-tmp2)/(Cpi*Porosity+Cps*(1-Porosity))
+               m_sedIce(ii) = Porosity-unfrz
+               m_sedTemp(ii) = T0 - (tmp1-tmp2)/(Cpi*(Porosity-unfrz)+Cps*(1-Porosity)+Cpl*unfrz)  ! add unfrozen part
+            end if
+            if (m_sedIce(ii) > (Porosity-unfrz-e8)) then
+               m_sedIce(ii) = Porosity-unfrz
             end if
          end if
       end do                           
@@ -233,7 +265,7 @@ contains
       else
          talik = lake_info%hsed 
       end if
-      talik = max(0._r8, min(talik, lake_info%hsed))
+      talik = max(0._r8, min(talik, lake_info%hsed)) ! changed according to ALBM-update
 
       ! construct thermal profile
       Porosity = sa_params(Param_Por)
@@ -251,7 +283,7 @@ contains
          print "(A, I0, A, F10.4)", "Lake ", lake_info%id, &
                ": mean ground temperature ", Tbot-T0
       end if
-      if (talik>e8) then
+      if (talik>e8) then ! added acoording to ALBM-update
          Ttop = T0 + 4.6 
          Ttk = 0.5 * (Ttop + T0)
          Tuf = 0.5 * (T0 + Tbot)
@@ -259,9 +291,13 @@ contains
          satLW_tk = CalcSoilWaterSaturation(Ttk)
          satLW_uf = CalcSoilWaterSaturation(Tuf)
          satLW_lf = CalcSoilWaterSaturation(Tlf)
-         Ks_tk = CalcSedHeatConductivity(Porosity, satLW_tk, Kss)
-         Ks_uf = CalcSedHeatConductivity(Porosity, satLW_uf, Kss)
-         Ks_lf = CalcSedHeatConductivity(Porosity, satLW_lf, Kss)
+         ! Lin has replaced Ks with fixed parameters according to Huang,2018, Master thesis, partly referenced by Ling&Wu,2017
+         Ks_tk = 1.383
+         Ks_uf = 2.077
+         Ks_lf = 2.606
+         !Ks_tk = CalcSedHeatConductivity(Porosity, satLW_tk, Kss)
+         !Ks_uf = CalcSedHeatConductivity(Porosity, satLW_uf, Kss)
+         !Ks_lf = CalcSedHeatConductivity(Porosity, satLW_lf, Kss)
          dist = Ks_uf / Ks_tk * talik * (T0 - Tbot) / (Ttop - T0)
          if (dist>0) then
             pMAGT = talik + dist
@@ -287,15 +323,24 @@ contains
          dTtk = (Tbot - Ttop) / lake_info%hsed
          do ii = 1, NSLAYER+1, 1
             m_sedTemp(ii) = Ttop + dTtk * (m_Zs(ii)-m_Zs(1))
+            if (m_sedTemp(ii)<T0) then
+               if (ii==1 .or. ii==2) then
+                  m_sedIce(ii) = Porosity * (1-0.07*(T0 - m_sedTemp(ii))**(-0.17))
+               else
+                  m_sedIce(ii) = Porosity * (1-0.12*(T0 - m_sedTemp(ii))**(-0.15))
+               end if
+            else
+               m_sedIce(ii) = 0.0_r8
+            end if
          end do
       end if
 
       ! construct ice profile
-      where (m_sedTemp<T0) 
-         m_sedIce = Porosity
-      elsewhere
-         m_sedIce = 0.0_r8
-      end where
+      !where (m_sedTemp<T0) 
+      !   m_sedIce = Porosity
+      !elsewhere
+      !   m_sedIce = 0.0_r8
+      !end where
       m_Ks = 0.0_r8
       call UpdateSedWaterBoundIndex()
    end subroutine

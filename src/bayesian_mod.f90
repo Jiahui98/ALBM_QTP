@@ -10,9 +10,6 @@ module bayesian_mod
    use costfunc_mod
    use read_data_mod
    use io_utilities_mod
-#ifdef USE_INTEL_COMPILER
-   use ifport
-#endif
    use mpi
 
    implicit none
@@ -34,7 +31,7 @@ contains
       real(r8) :: weights(20)
       character(len=8) :: varnames(20)
       integer, allocatable :: sampleIds(:)
-      integer, parameter :: ndid = 500
+      integer, parameter :: ndid = 200 ! changed by Lin, 20240212
       integer :: ii, cnt, minid, maxid, err
       integer :: sampleId, idx, nsample, itmp
       integer :: nvar, sample_next_range(2)
@@ -79,7 +76,6 @@ contains
          call MPI_BCAST(samples(:,ii), NMAXSAMPLE, MPI_REAL8, 0, &
                         MPI_COMM_WORLD, err)
       end do
-
       if (masterproc) then
          allocate(results(nvar,nsample))
          allocate(sirs(nvar*numprocs))
@@ -147,9 +143,6 @@ contains
       integer :: i4ret, lakeId, error
       real(r8) :: sir
 
-#ifdef USE_INTEL_COMPILER
-      i4ret = SIGNALQQ(SIG$FPE, hand_fpe)
-#endif
       ! read lake information (i.e. depth, location ...)
       lakeId = lake_range(1)
       call ReadLakeName(lakeId)
@@ -177,38 +170,5 @@ contains
    ! Purpose: some utilities for exceptions: SIG$FPE, SIG$ABORT, SIG$SEGV
    !
    !------------------------------------------------------------------------------
-#ifdef USE_INTEL_COMPILER
-   function hand_fpe(sigid, except)
-      !DEC$ ATTRIBUTES C :: hand_fpe
-      use ifport
-      !use ifcore
-      INTEGER(4) :: hand_fpe
-      INTEGER(2) :: sigid, except
-
-      if (sigid/=SIG$FPE) then
-         hand_fpe = 1
-         return
-      end if
-      select case(except)
-         case( FPE$INVALID )
-            print *, ' Floating point exception: Invalid number'
-         case( FPE$DENORMAL )
-            print *, ' Floating point exception: Denormalized number'
-         case( FPE$ZERODIVIDE )
-            print *, ' Floating point exception: Zero divide'
-         case( FPE$OVERFLOW )
-            print *, ' Floating point exception: Overflow'
-         case( FPE$UNDERFLOW )
-            print *, ' Floating point exception: Underflow'
-         case( FPE$INEXACT )
-            print *, ' Floating point exception: Inexact precision'
-         case default
-            print *, ' Floating point exception: Non-IEEE type'
-      end select
-      !CALL TRACEBACKQQ(trim(header), USER_EXIT_CODE=-1)
-      print *, 'failed sample ', cur_sample, sa_params 
-      hand_fpe = 1
-   end function
-#endif
 
 end module bayesian_mod

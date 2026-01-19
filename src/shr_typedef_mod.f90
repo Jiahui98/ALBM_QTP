@@ -29,7 +29,7 @@ module shr_typedef_mod
    type LakeInfo
       integer  :: id                   ! lake id
       character(len=32) :: name        ! lake name
-      integer  :: itype                ! lake type identifier
+      !integer  :: itype                ! lake type identifier
       real(r8) :: latitude             ! lake latitude
       real(r8) :: longitude            ! lake longitude
       real(r8) :: depth                ! lake maximum depth (m)
@@ -43,6 +43,7 @@ module shr_typedef_mod
       integer  :: thrmkst              ! 1=thermokarst, 0=vice
       integer  :: margin               ! 1=margin, 2=slope, 0=center
       integer  :: hydroconn            ! 1=hydro connect, 0=vice
+      integer  :: itype                ! 1=alpine swamp meadow, 2=alpine meadow, 3=alpine steppe, 4=alpine desert
    end type
    type SimTime
       integer :: year0                 ! the starting year
@@ -60,6 +61,7 @@ module shr_typedef_mod
       real(r8) :: tau550               ! aerosol optical depth at 550 nm
       real(r8) :: AbO3                 ! ozone total-column density (1000 DU)
       real(r8) :: qCO2                 ! CO2 concentration (ppm)
+      real(r8) :: qCH4                 ! CH4 concentration (ppm)
       real(r8) :: Latit                ! site latitude (+/-)
       real(r8) :: Longit               ! site longitude (+/-)
       integer  :: year, month, day     ! local time date

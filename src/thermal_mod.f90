@@ -93,13 +93,17 @@ contains
       implicit none
       real(r8) :: cita, icita, temp
       real(r8) :: Kml, wind, w10, lat
+      real(r8) :: Tair, ps, Roua      ! added by Lin,2024.2.16
       integer :: ii
 
+      Tair = m_surfData%temp    ! added by Lin
+      ps = m_surfData%pressure  ! added by Lin
       call UpdateWaterDensity()
       call CalcDynamicViscosity(m_waterTemp, m_dVsc) 
       w10 = m_surfData%wind
       wind = ConvertWindSpeed(w10, 2.0d0) 
       lat = lake_info%latitude
+      call CalcAirDensity(Tair, ps, Roua)   ! added by Lin
       fmm_hr = Roua * Cd10 * (w10**2)
       ! wind-driven eddy diffusivity
       call CalcBruntVaisalaFreq(m_dZw, m_wrho, freq)
@@ -262,8 +266,8 @@ contains
          hnet_hr = m_surfData%srd - lw_net - sh_hr - lh_hr
       else if (m_Hice>e8) then
          lw_net = Epsi*Stefan*(Ttop**4) - Epsi*m_surfData%lw
-         lh_net = CalcLatentHeatIce(Ttop, Tair, RH, wind)
-         sh_net = CalcSensibleHeat(Ttop, Tair, wind)
+         lh_net = CalcLatentHeatIce(Ttop, Tair, RH, wind, ps) ! added Tair according to ALBM-update
+         sh_net = CalcSensibleHeat(Ttop, Tair, wind, ps) ! added ps by Lin
          runoff_net = 0.0_r8
 
          lh_hr = lh_net
@@ -272,10 +276,10 @@ contains
          hnet_hr = m_surfData%srd - lw_net - sh_hr - lh_hr 
       else
          lw_net = Epsw*Stefan*(Ttop**4) - Epsw*m_surfData%lw
-         lh_net = CalcLatentHeatWater(Ttop, Tair, RH, wind)
+         lh_net = CalcLatentHeatWater(Ttop, Tair, RH, wind, ps) ! added Tair according to ALBM-update; added ps by Lin
          !Rn = m_surfData%srd - lw_net
-         !lh_net = CalcLatentHeatWater(Ttop, Tair, RH, wind, ps, Rn)
-         sh_net = CalcSensibleHeat(Ttop, Tair, wind)
+         !lh_net = CalcLatentHeatWater(Ttop, Tair, RH, wind, ps, Rn) ! added Tair according to ALBM-update
+         sh_net = CalcSensibleHeat(Ttop, Tair, wind, ps) ! added ps by Lin
          Twet = CalcWetBubTemp(Tair, RH, m_surfData%pressure)
          if (m_surfData%rainfall>e8) then
             runoff_net = Cpl*Roul*(Twet-Ttop)*m_surfData%rainfall
@@ -440,7 +444,7 @@ contains
       real(r8) :: tavg, tzw, Vepi, Vz
       real(r8) :: hmix, Wstr, w10, As, Pkin
       real(r8) :: Epot, drho, mepi, mz
-      real(r8) :: zepi, zmz, Mv
+      real(r8) :: zepi, zmz, Mv ! deleted Tt, Tb according to ALBM-update
       integer :: ii, top, bottom 
 
       top = m_lakeWaterTopIndex
@@ -450,7 +454,7 @@ contains
          w10 = m_surfData%wind 
          As = 1d-6 * lake_info%Asurf
          Wstr = min(sa_params(Param_Wstr)*(1.0-exp(-0.3*As)), 1.0)
-         call CalcTotalKineticPower(lake_info, w10, Pkin)
+         call CalcTotalKineticPower(lake_info, w10, Pkin, m_surfData%temp, m_surfData%pressure)
          m_Ekin = m_Ekin + Wstr * Pkin * dt
       else
          m_Ekin = 0.0_r8
@@ -498,14 +502,16 @@ contains
          m_Hmix = 0.0_r8
       end if
       if (m_Hice<e8) then
+         !Tt = m_waterTemp(top) ! deleted according to ALBM-update
+         !Tb = m_waterTemp(bottom) ! deleted according to ALBM-update
          do ii = top, bottom, 1
-            if (abs(m_waterTemp(ii)-m_waterTemp(top))>1.0) then
+            if (abs(m_waterTemp(ii)-m_waterTemp(top))>1.0) then ! changed according to ALBM-update
                exit
             end if
             m_HbLayer(1) = m_Zw(ii)
          end do
          do ii = bottom, top, -1
-            if (abs(m_waterTemp(ii)-m_waterTemp(bottom))>1.0) then
+            if (abs(m_waterTemp(ii)-m_waterTemp(bottom))>1.0) then ! changed according to ALBM-update
                exit
             end if
             m_HbLayer(2) = m_Zw(bottom) - m_Zw(ii)
@@ -543,7 +549,7 @@ contains
          wind = ConvertWindSpeed(m_surfData%wind, 2.0d0)
          rad = m_surfData%srd - sum(m_Iab)
          lw = max( Epsn*m_surfData%lw-Epsn*Stefan*(T0**4), 0.0_r8 )
-         sh = CalcSensibleHeat(T0, m_surfData%temp, wind)                               
+         sh = CalcSensibleHeat(T0, m_surfData%temp, wind, m_surfData%pressure) ! added ps by Lin 
          lh = 0.0_r8 
          runoff = Cpl*Roul*(m_surfData%temp-T0)*m_surfData%rainfall                         
          runoff = max( runoff, 0.0_r8 )
@@ -570,7 +576,7 @@ contains
          wind = ConvertWindSpeed(m_surfData%wind, 2.0d0)
          rad = m_surfData%srd - sum(m_Iab)
          lw = max( Epse*m_surfData%lw-Epse*Stefan*(T0**4), 0.0_r8 )
-         sh = CalcSensibleHeat(T0, m_surfData%temp, wind)
+         sh = CalcSensibleHeat(T0, m_surfData%temp, wind, m_surfData%pressure) ! added pressure by Lin
          lh = 0.0_r8 
          runoff = Cpl*Roul*(m_surfData%temp-T0)*m_surfData%rainfall
          runoff = max( runoff, 0.0_r8 )
@@ -637,7 +643,8 @@ contains
 
       ! catchment thermal variables
       if (lake_info%latitude>=0) then
-         if (Spinup_Month>=6 .and. Spinup_Month<=10) then
+         if (Spinup_Month>=5 .and. Spinup_Month<=10) then ! changed 6 to 5 by Lin, 20240212, &
+             ! (so as 5 to 4 in following), according to Lin et al., 2015
             winter_flag = 0
             prewinter_flag = 0
          else
@@ -645,7 +652,7 @@ contains
             prewinter_flag = 1
          end if
       else
-         if (Spinup_Month>=11 .or. Spinup_Month<=5) then
+         if (Spinup_Month>=11 .or. Spinup_Month<=4) then
             winter_flag = 0
             prewinter_flag = 0
          else

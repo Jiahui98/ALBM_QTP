@@ -32,9 +32,10 @@ module radiation_mod
    public :: CorrIrradianceForIce
    public :: abW, abI, abN, abE
    public :: abCDOM, abAP, abNAP, bsP
-   public :: Abd_fsnow, Abd_msnow
+   public :: Abd_fsnow, Abd_msnow ! deleted by Lin
    public :: fgphot, frdif, fbphot
    public :: mem_pico, mem_micro
+   public :: trans ! added by Lin
    real(r8), parameter :: NLosch = 2.6867775d+19
    real(r8), parameter :: epsilm = 1.0d-6
    real(r8), allocatable :: Zref50(:)  ! reference altitude (km)
@@ -94,6 +95,8 @@ module radiation_mod
    real(r8), allocatable :: Abs_HNO2(:,:) ! HNO2 absorption band
    real(r8), allocatable :: Abs_ClNO(:,:) ! ClNO3 absorption band
    real(r8) :: ESC                        ! solar constant (W/m2)
+   ! added by Lin
+   real(r8), allocatable :: trans(:)      ! transmissivity (%)
 
 contains
    subroutine InitializeSmartsModule()
@@ -150,6 +153,7 @@ contains
       allocate(Abs_ClNO(273,4))
       allocate(mem_pico(151))
       allocate(mem_micro(151))
+      allocate(trans(NSPCTM))            ! added by Lin
 
       call SetSmartsConstants()
       call ReadSpctrmFile(0, ESC, m_wvln, vH0)
@@ -236,6 +240,7 @@ contains
       deallocate(Abs_ClNO)
       deallocate(mem_pico)
       deallocate(mem_micro)
+      deallocate(trans)
    end subroutine
 
    !------------------------------------------------------------------------------
@@ -295,25 +300,28 @@ contains
    !  Purpose: Correct belowwater downward irradiance for snow reflection.
    !
    !------------------------------------------------------------------------------
-   subroutine CorrIrradianceForSnow(zenith, temp, fgphot, ofrdif, zcos)
+   subroutine CorrIrradianceForSnow(depth, zenith, temp, fgphot, ofrdif, zcos) ! changed by Lin
       implicit none
+      real(r8), intent(in) :: depth          ! snow depth(m) ! added by Lin
       real(r8), intent(in) :: zenith         ! abovewater zenith angle
       real(r8), intent(in) :: temp           ! air temperature
       real(r8), intent(inout) :: fgphot(:)   ! downward irradiance
       real(r8), intent(in) :: ofrdif(:)      ! diffuse fraction
       real(r8), intent(out) :: zcos          ! cosine of underwater zenith angle
+      real(r8) :: Alphan                     ! the albedo of snow, added by Lin
 
+      Alphan = -0.69*exp(-depth*100/0.72)+0.95
       zcos = cos(zenith*Pi/180.0)
       if (temp<=T0 .and. m_radPars%season==0) then
          fgphot = (1.0 - (0.939*ofrdif + (1.0-0.176*zcos)/0.94* &
-               (1.0-ofrdif)) * Abd_fsnow) * fgphot
+               (1.0-ofrdif)) * Alphan) * fgphot
       else
          if (zcos>1.0d-6) then
             fgphot = (1.0 - (1.167*ofrdif + (1.0-zcos*log(1.0+1.0/zcos))/ &
-                  0.35*(1.0-ofrdif)) * Abd_msnow) * fgphot
+                  0.35*(1.0-ofrdif)) * Alphan) * fgphot                  ! changed back from Alphan to Abd_msnow, 250930
          else
             fgphot = (1.0 - (1.167*ofrdif + (1.0-ofrdif)/0.35) * &
-                  Abd_msnow) * fgphot
+                  Alphan) * fgphot                                       ! changed back, 250930
          end if
       end if
    end subroutine

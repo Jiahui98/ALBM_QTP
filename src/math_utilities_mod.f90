@@ -5,13 +5,10 @@ module math_utilities_mod
 ! This module serves for the implementation of some basic physical utilities
 !
 !---------------------------------------------------------------------------------
-   use shr_kind_mod,       only : r8, r4, i8, NaN
+   use shr_kind_mod,       only : r8, r4, i8
    use shr_ctrl_mod,       only : inft => INFINITESIMAL_E8, inf => INFINITE_E8, &
                                   TOL_E8
    use shr_typedef_mod,    only : RungeKuttaCache1D, RungeKuttaCache2D
-#ifdef USE_INTEL_COMPILER
-   use ifport
-#endif
 
    implicit none
    integer, parameter :: adaptive_mode = 101, fixed_mode = 102
@@ -681,41 +678,91 @@ contains
       idx = last - 1
    end subroutine
 
+   subroutine BinarySearch2(array, obj, idx) ! created by Lin, since SIGNALQQ does not fit gfortran
+      implicit none
+      integer, intent(in) :: array(:)
+      integer, intent(in) :: obj
+      integer, intent(out) :: idx
+      integer :: middle, first, last
+      logical :: ascend
+
+      first = 1
+      last = size(array)
+      ascend = (array(first)<array(last))
+      if (ascend) then
+         if (obj<=array(first)) then
+            idx = 1
+            return
+         else if (obj>=array(last)) then
+            idx = last
+            return
+         end if
+      else
+         if (obj>=array(first)) then
+            idx = 1
+            return
+         else if (obj<=array(last)) then
+            idx = last
+            return
+         end if
+      end if 
+      do while (last>first)
+         middle = (first+last)/2
+         if (array(middle)==obj) then
+            last = middle
+            exit
+         else if (array(middle)<obj) then
+            if (ascend) then
+               first = middle + 1
+            else
+               last = middle
+            end if 
+         else
+            if (ascend) then
+               last = middle
+            else
+               first = middle +1
+            end if
+         end if
+      end do
+      idx = last - 1 
+   end subroutine
+   
    !------------------------------------------------------------------------------
    !
    ! Purpose: solve nonlinear equation by Newton method.
    !
    !------------------------------------------------------------------------------
-   subroutine SolveNonlinearEquation(ofunc, odfunc, x0, root)
-      implicit none
-      external :: ofunc                ! function object
-      external :: odfunc               ! function derivative object 
-      real(r8), intent(in) :: x0       ! initial value
-      real(r8), intent(out) :: root    ! real root
-      real(r8) :: fVal, fdVal, xcur, dx
-      integer :: iter
+   !subroutine SolveNonlinearEquation(ofunc, odfunc, x0, root) ! may not suitable for gfortran
+      !implicit none
+      !external :: ofunc                ! function object
+      !external :: odfunc               ! function derivative object 
+      !real(r8), intent(in) :: x0       ! initial value
+      !real(r8), intent(out) :: root    ! real root
+      !real(r8) :: fVal, fdVal, xcur, dx
+      !integer :: iter
 
-      xcur = x0
-      dx = 1.0_r8
-      iter = 1
-      do while (dx>1.0d-6)
-         if (iter>MAXITER) then
-            print *, "Newton iteration number is more than 100!!" 
-            root = NaN 
-            exit
-         end if
-         call ofunc(xcur, fVal)
-         call odfunc(xcur, fdVal)
-         root = xcur - fVal/fdVal
-         if (abs(root)<1) then
-            dx = abs( root - xcur )
-         else
-            dx = abs( 1.0d0 - xcur/root ) 
-         end if
-         xcur = root
-         iter = iter + 1
-      end do
-   end subroutine
+      !xcur = x0
+      !dx = 1.0_r8
+      !iter = 1
+      !do while (dx>1.0d-6)
+      !   if (iter>MAXITER) then
+      !      print *, "Newton iteration number is more than 100!!" 
+      !      root = NaN 
+      !      exit
+      !   end if
+      !   call ofunc(xcur, fVal)
+      !   call odfunc(xcur, fdVal)
+      !   root = xcur - fVal/fdVal
+      !   if (abs(root)<1) then
+      !      dx = abs( root - xcur )
+      !   else
+      !      dx = abs( 1.0d0 - xcur/root ) 
+      !   end if
+      !   xcur = root
+      !   iter = iter + 1
+      !end do
+   !end subroutine
    
    !------------------------------------------------------------------------------
    !

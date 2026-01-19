@@ -5,30 +5,21 @@ objects = $(sources:%.f90=%.o)
 modules = $(wildcard *.mod)
 outputs := $(wildcard bLakeJob.sub.*)
 
-ifeq ($(FC), ifort)
-
 ifeq ($(DEBUG), 1)
 FFLAGS = -CB -g
 else
 FFLAGS = -O3
 endif
-FFLAGS += -traceback -fpe0 -fpp -D USE_INTEL_COMPILER
-
-else
-
-ifeq ($(DEBUG), 1)
-FFLAGS = -g
-else
-FFLAGS = -O3
+ifeq ($(TRACE), 1)
+FFLAGS += -traceback -fpe0 
 endif
-FFLAGS += -cpp
-
+ifeq ($(OPT), 1)
+FFLAGS += -fast
 endif
-
-FFLAGS += -I$(NETCDF_HOME)/include -I/usr/include
+FFLAGS += -I$(NETCDF_HOME)/include -I/home/jiahui/local/pnetcdf/include
 #FFLAGS += -I$(NETCDF_HOME)/include $(LAPACK_INCLUDE_F95) -I/usr/include
-LDFLAGS =
-LIBS = -L$(NETCDF_HOME)/lib -lpnetcdf -L/usr/lib64
+LDFLAGS += -Wl,-rpath,/home/jiahui/local/pnetcdf/lib -L/home/jiahui/local/pnetcdf/lib
+LIBS = -L/home/jiahui/local/pnetcdf/lib -lpnetcdf
 #LIBS = -L$(NETCDF_HOME)/lib -lpnetcdf -L/usr/lib64 $(LINK_LAPACK95) -lblas -llapack
 
 f90comp = mpif90 $(FFLAGS) -c
@@ -98,7 +89,7 @@ radiation_mod.o :	radiation_mod.f90		shr_kind_mod.o				\
 						$(f90comp) radiation_mod.f90
 data_buffer_mod.o :	data_buffer_mod.f90	shr_ctrl_mod.o				\
 							shr_typedef_mod.o		phy_utilities_mod.o  	\
-							read_data_mod.o
+							read_data_mod.o				bg_const_mod.o
 							$(f90comp) data_buffer_mod.f90
 radiation_io_mod.o :	radiation_io_mod.f90		shr_kind_mod.o			\
 							shr_ctrl_mod.o				io_utilities_mod.o	\
@@ -119,7 +110,8 @@ bg_utilities_mod.o :		bg_utilities_mod.f90		bg_const_mod.o		\
 								$(f90comp) bg_utilities_mod.f90
 phy_utilities_mod.o :   phy_utilities_mod.f90   phy_const_mod.o			\
                         shr_ctrl_mod.o				shr_typedef_mod.o			\
-								shr_kind_mod.o
+			bg_const_mod.o                     \
+							                 shr_param_mod.o	shr_kind_mod.o
 								$(f90comp) phy_utilities_mod.f90
 math_utilities_mod.o :	math_utilities_mod.f90	shr_kind_mod.o		\
 								shr_ctrl_mod.o
@@ -135,7 +127,7 @@ shr_ctrl_mod.o :	shr_ctrl_mod.f90		shr_kind_mod.o			\
 						shr_typedef_mod.o
 						$(f90comp) shr_ctrl_mod.f90
 shr_typedef_mod.o :	shr_typedef_mod.f90	shr_kind_mod.o
-							$(f90comp) shr_typedef_mod.f90
+					$(f90comp) shr_typedef_mod.f90
 shr_kind_mod.o :	shr_kind_mod.f90
 						$(f90comp) shr_kind_mod.f90
 # Cleaning everything

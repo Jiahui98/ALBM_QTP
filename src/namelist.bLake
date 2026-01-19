@@ -1,70 +1,77 @@
-&general
- run_mode = 'regular'
- lake_file = './Lakes_ISIMIP.nc'
- lakeid_file = './Lakes_ISIMIP_id.list'
- lake_range = 1, 59
- bthmtry_dir = './Bathymetry/'
- param_dir = './Parameters/'
-/
+&GENERAL
+ RUN_MODE='regular                     ',
+ LAKE_FILE='./lakeinformation.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ',
+ LAKEID_FILE='./Lakes_id.list                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ',
+ LAKE_RANGE= 1,1          ,
+ BTHMTRY_DIR='./Bathymetry/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ',
+ PARAM_DIR='./Parameters/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ',
+ PARAM_FILE='                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ',
+ /
+&SIMULATION
+ THERMAL_MODULE=T,
+ BUBBLE_MODULE=T,
+ DIAGENESIS_MODULE=T,
+ CARBON_MODULE=T,
+ HYDRO_MODULE=T,
+ START_YEAR=1993       ,
+ START_MONTH=1          ,
+ START_DAY=1          ,
+ END_YEAR=2023       ,
+ END_MONTH=1          ,
+ END_DAY=1          ,
+ SPINUP_MONTH=7          ,
+ SPINUP_DAY=1          ,
+ NSPINUP=10         ,
+ /
+&RESOLUTION
+ NWLAYER=50         ,
+ NSLAYER=10         ,
+ NRLAYER=10         ,
+ /
+&BAYESIAN
+ NMAXSAMPLE=8192       ,
+ SAMPLE_RANGE= 2*5437       ,
+ OBS_DIR='./Observations_BLH/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ',
+ OBS_VAR='ts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ',
+ OBS_WEIGHT='1.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             ',
+ MC_FILE='./saltelli_CH4_full20.dat                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ',
+ SA_FILE='./sobol_ch4.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  ',
+ /
+&RADIATION
+ SOLAR_DIR='./Solar/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ',
+ GAS_DIR='./Gases/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ',
+ ALBEDO_DIR='./Albedo/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ',
+ CO2_FILE='../Data/GHG_monthly.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ',
+ CH4_FILE='../Data/GHG_monthly.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          ',
+ O3_FILE='../Data/o3_Amon_rcp45_r1i1p1_197801-210012.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ',
+ AOD_FILE='../Data/aod550_Amon_rcp45_r1i1p1_197801-210012.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ',
+ /
+&RUNDATA
+ FORCING_TSTEP='day                             ',
+ FORCING_DIR='                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ',
+ HYDRO_DIR='../Data/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ',
+ TREF_FILE='../Data/ecmwf_ref_1990s.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      ',
+ SOC_FILE='../Data/soc_005deg.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ',
+ VEG_FILE='../Data/GLCFTreeCover.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        ',
+ WLND_FILE='../Data/glwd.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 ',
+ TAS_FILE='../forcing/tas.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               ',
+ TASMAX_FILE='../forcing/tasmax.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ',
+ TASMIN_FILE='../forcing/tasmin.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            ',
+ HURS_FILE='../forcing/hurs.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ',
+ PS_FILE='../forcing/ps.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ',
+ PR_FILE='../forcing/pr.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ',
+ PRSN_FILE='../forcing/prsn.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ',
+ RSDS_FILE='../forcing/rsds.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ',
+ RLDS_FILE='../forcing/rlds.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              ',
+ WIND_FILE='../forcing/sfcWind.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           ',
+ GW_FILE='../Data/gw.nc                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   ',
+ /
+&ARCHIVE
+ ARCHIVE_TSTEP='day                             ',
+ ARCHIVE_DIR='./regular1_1202/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ',
 
-&simulation
- Thermal_Module = .True.
- Bubble_Module = .False.
- Diagenesis_Module = .False.
- Carbon_Module = .False.
- Hydro_Module = .False.
- Start_Year = 1979
- Start_Month = 1
- Start_Day = 1
- End_Year = 2016
- End_Month = 1
- End_Day = 1
- Spinup_Month = 7
- Spinup_Day = 1
- nSpinup = 2
-/
-
-&resolution
- NWLAYER = 50
- NSLAYER = 40
- NRLAYER = 10
-/
-
-&bayesian
- NMAXSAMPLE = 75000
- sample_range = 1, 10000
- obs_dir = './Observations/'
- obs_var = 'tw,DO,Dco2,ice,iceon,iceoff,chla'
- obs_weight = '1.0,1.0,1.0,1.0,1.0,1.0,1.0'
- mc_file = './model_parameters.dat'
- sa_file = './SA.nc'
-/
-
-&radiation
- solar_dir = './Solar/'
- gas_dir = './Gases/'
- albedo_dir = './Albedo/'
- co2_file = '/qfs/projects/taim/Data/others/cmip5_co2.nc'
- o3_file = '/qfs/projects/taim/Data/others/o3_Amon_rcp45_r1i1p1_197801-210012.nc'
- aod_file = '/qfs/projects/taim/Data/others/aod550_Amon_rcp45_r1i1p1_197801-210012.nc'
-/
-
-&rundata
- forcing_tstep = 'day'
- forcing_dir = '/qfs/projects/taim/Data/ISIMIP/EWEMBI/historical/forcing_obs_'
- hydro_dir = '/qfs/projects/taim/Data/ISIMIP/EWEMBI/historical/hydro_obs_'
- tref_file = '/qfs/projects/taim/Data/others/ecmwf_ref_1990s.nc'
- soc_file = '/qfs/projects/taim/Data/bLake/Gridded/soc_005deg.nc'
- veg_file = '/qfs/projects/taim/Data/bLake/Gridded/GLCFTreeCover.nc'
- wlnd_file = '/qfs/projects/taim/Data/nclimate/Gridded/glwd.nc'
-/
-
-&archive
- archive_tstep = 'day'
- archive_dir = '/qfs/projects/taim/Data/bLake/Site-level/'
-/
-
-&dbg
- DEBUG = .False.
- RESUBMIT = .False.
-/
+ /
+&DBG
+ DEBUG=T,
+ RESUBMIT=F,
+ /

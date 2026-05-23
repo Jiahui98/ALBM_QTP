@@ -17,7 +17,7 @@ module sensitivity_mod
    public :: RunSensitivity 
    ! # of output variables
    integer, parameter :: NOUT = 9 !changed by Lin,2024
-   ! 9 for ch4, 12 for co2.
+   ! 9 for ch4, 12 for co2, 5 for ther.
    ! current sample Id 
    integer :: cur_sample
 
@@ -145,7 +145,7 @@ contains
       call InitializeSimulation()
       call ModelRun(lakeId, time, spinup, error)
       if (error==0) then
-         call GetSensitivityReturn(sir)  
+         call GetSensitivityReturn_C(sir)  
       else
          sir = -9999.0_r8
       end if
@@ -165,29 +165,100 @@ contains
    !     4. ice-off DOY
    !
    !------------------------------------------------------------------------------
-   subroutine GetSensitivityReturn(odata)
+! For Thermal
+   subroutine GetSensitivityReturn_T(odata)
       implicit none
       real(r8), intent(out) :: odata(NOUT)
-!      real(r8), allocatable :: tmp_zs(:)
-!      real(r8), allocatable :: tmp_zb(:)
-!      real(r8), allocatable :: tmp_zc(:)
-!      real(r8) :: avg_zs, avg_zb, avg_zc 
-!      real(r8) :: avg_fco2, avg_dco2, avg_doc, avg_do !, co2_hr(1), zco2(1)
-      real(r8) :: avg_fch4d, avg_fch4e, avg_dch4
+      real(r8), allocatable :: tmp_zs(:)
+      real(r8), allocatable :: tmp_zb(:)
+      real(r8), allocatable :: tmp_zc(:)
+      real(r8) :: avg_zs, avg_zb, avg_zc 
       integer :: JDN0, JDN1, JDNb, JDNe
-      integer :: ii, jj!, izs, izb, izc
+      integer :: ii, jj, izs, izb, izc
       integer :: idx0, idx1, nt1, nt2
       integer :: iceon, iceoff
 
       odata = 0.0_r8
       ! get the z indices
-!      izs = count(m_Zw<=5)
-!      izb = count(m_Zw>=10)
-!      izc = count(m_Zs>=0)!changed by linjiahui,20230704     
-!      allocate(tmp_zs(izs))
-!      allocate(tmp_zb(izb))
-!      allocate(tmp_zc(izc))
-!      izb = WATER_LAYER + 2 - izb
+      izs = count(m_Zw<=5)
+      izb = count(m_Zw>=10)
+      izc = count(m_Zs>=0)!changed by linjiahui,20230704     
+      allocate(tmp_zs(izs))
+      allocate(tmp_zb(izb))
+      allocate(tmp_zc(izc))
+      izb = WATER_LAYER + 2 - izb
+     ! get the mean annual values
+      call Date2JDN(Start_Year, Start_Month, Start_Day, JDN0)
+      call Date2JDN(End_Year, End_Month, End_Day, JDN1)
+      nt1 = 0
+      nt2 = 0
+      do ii = Start_Year, End_Year, 1
+         call Date2JDN(ii, 5, 15, JDNb)          
+         call Date2JDN(ii, 11, 15, JDNe)
+         if (JDNb>=JDN0 .and. JDNe<=JDN1) then
+            nt1 = nt1 + 1
+            idx0 = 24 * (JDNb - JDN0) + 1
+            idx1 = 24 * (JDNe - JDN0)
+            ! temperature
+            call Mean(DBLE(m_tempwHist(1:izs,idx0:idx1)), 2, tmp_zs)
+            call Mean(DBLE(m_tempwHist(izb:WATER_LAYER+1,idx0:idx1)), &
+               2, tmp_zb)
+            call WeightMean(tmp_zs, m_dZw(1:izs), avg_zs)
+            call WeightMean(tmp_zb, m_dZw(izb:WATER_LAYER+1), avg_zb)
+            ! soil temperature
+            call Mean(DBLE(m_tempsHist(1:izc,idx0:idx1)),2,tmp_zc)!added by linjiahui,20230704
+            call WeightMean(tmp_zc, m_dZs(1:izc), avg_zc)!added by linjiahui,20230704
+            odata(1) = odata(1) + avg_zs  
+            odata(2) = odata(2) + avg_zb
+            odata(3) = odata(3) + avg_zc!changed by linjiahui,20230704
+         end if
+         call Date2JDN(ii, 1, 1, JDNb)
+         call Date2JDN(ii, 12, 31, JDNe)
+         if (JDNb>=JDN0 .and. JDNe<=JDN1) then
+            nt2 = nt2 + 1
+            idx0 = 24 * (JDNb - JDN0) + 1
+            idx1 = 24 * (JDNe - JDN0) + 24
+           ! ice-on and ice-off DOY 
+            iceoff = 1 
+            do jj = idx0, idx1, 1
+               if (m_iceHist(jj)<1d-6) then
+               iceoff = INT((jj-idx0)/24.0) + 1
+               exit 
+               end if
+            end do
+            iceon = JDNe - JDNb + 1 
+            do jj = idx1, idx0, -1
+               if (m_iceHist(jj)<1d-6) then
+                  iceon = INT((jj-idx0)/24.0) + 1 
+                  exit
+               end if
+            end do
+            odata(4) = odata(4) + DBLE(iceon)!changed by linjiahui,20230704
+            odata(5) = odata(5) + DBLE(iceoff)
+         end if
+      end do
+      if (nt1>0) then
+         odata(1:3) = odata(1:3) / DBLE(nt1)
+      end if
+      if (nt2>0) then
+         odata(4:5) = odata(4:5) / DBLE(nt2)
+      end if
+      deallocate(tmp_zs)
+      deallocate(tmp_zb)
+      deallocate(tmp_zc)
+   end subroutine
+
+! For CO2 & CH4
+   subroutine GetSensitivityReturn_C(odata)
+      implicit none
+      real(r8), intent(out) :: odata(NOUT)
+!      real(r8) :: avg_fco2, avg_dco2, avg_doc, avg_do !, co2_hr(1), zco2(1)
+      real(r8) :: avg_fch4d, avg_fch4e, avg_dch4
+      integer :: JDN0, JDN1, JDNb, JDNe
+      integer :: ii, jj
+      integer :: idx0, idx1, nt1, nt2
+
+      odata = 0.0_r8
      ! get the mean annual values
       call Date2JDN(Start_Year, Start_Month, Start_Day, JDN0)
       call Date2JDN(End_Year, End_Month, End_Day, JDN1)
@@ -205,23 +276,11 @@ contains
                nt1 = nt1 + 1
                idx0 = 24 * (JDNb - JDN0) + 1
                idx1 = 24 * (JDNe - JDN0)
-            ! temperature
-        !    call Mean(DBLE(m_tempwHist(1:izs,idx0:idx1)), 2, tmp_zs)
-        !    call Mean(DBLE(m_tempwHist(izb:WATER_LAYER+1,idx0:idx1)), &
-        !       2, tmp_zb)
-        !    call WeightMean(tmp_zs, m_dZw(1:izs), avg_zs)
-        !    call WeightMean(tmp_zb, m_dZw(izb:WATER_LAYER+1), avg_zb)
-            ! soil temperature
-          !  call Mean(DBLE(m_tempsHist(1:izc,idx0:idx1)),2,tmp_zc)!added by linjiahui,20230704
-          !  call WeightMean(tmp_zc, m_dZs(1:izc), avg_zc)!added by linjiahui,20230704
-          !  odata(1) = odata(1) + avg_zs  
-          !  odata(2) = odata(2) + avg_zb
-          !  odata(3) = odata(3) + avg_zc!changed by linjiahui,20230704
             ! co2
-           !    call Mean(DBLE(m_fco2Hist(idx0:idx1)), avg_fco2)
-           !    call Mean(DBLE(m_belowdco2(idx0:idx1)), avg_dco2)
-           !    call Mean(DBLE(m_belowdoc(idx0:idx1)), avg_doc)
-           !    call Mean(DBLE(m_belowdo(idx0:idx1)), avg_do)
+          !     call Mean(DBLE(m_fco2Hist(idx0:idx1)), avg_fco2)
+          !     call Mean(DBLE(m_belowdco2(idx0:idx1)), avg_dco2)
+          !     call Mean(DBLE(m_belowdoc(idx0:idx1)), avg_doc)
+          !     call Mean(DBLE(m_belowdo(idx0:idx1)), avg_do)
             ! ch4
                call Mean(DBLE(m_fch4dHist(idx0:idx1)), avg_fch4d)
                call Mean(DBLE(m_fch4eHist(idx0:idx1)), avg_fch4e)
@@ -229,45 +288,15 @@ contains
                odata(nt1) = odata(nt1) + avg_fch4d!avg_fco2
                odata(nt1+3) = odata(nt1+3) + avg_fch4e!avg_dco2
                odata(nt1+6) = odata(nt1+6) + avg_dch4!avg_doc
-           !    odata(nt1+9) = odata(nt1+9) + avg_do!only when co2
+          !    odata(nt1+9) = odata(nt1+9) + avg_do!only when co2
             end if
- !        call Date2JDN(ii, 1, 1, JDNb)
- !        call Date2JDN(ii, 12, 31, JDNe)
- !        if (JDNb>=JDN0 .and. JDNe<=JDN1) then
- !           nt2 = nt2 + 1
- !           idx0 = 24 * (JDNb - JDN0) + 1
- !           idx1 = 24 * (JDNe - JDN0) + 24
- !           ! ice-on and ice-off DOY 
- !           iceoff = 1 
- !           do jj = idx0, idx1, 1
- !              if (m_iceHist(jj)<1d-6) then
- !                 iceoff = INT((jj-idx0)/24.0) + 1
- !                 exit 
- !              end if
- !           end do
- !           iceon = JDNe - JDNb + 1 
- !           do jj = idx1, idx0, -1
- !              if (m_iceHist(jj)<1d-6) then
- !                 iceon = INT((jj-idx0)/24.0) + 1 
- !                 exit
- !              end if
- !           end do
- !           odata(4) = odata(4) + DBLE(iceon)!changed by linjiahui,20230704
- !           odata(5) = odata(5) + DBLE(iceoff)
- !        end if
          end do
       end do
- !     if (nt1>0) then
- !        odata(1:3) = odata(1:3) / DBLE(nt1)
- !     end if
       if (nt2>0) then
          odata(:) = odata(:) / DBLE(nt2)
       end if
-!      deallocate(tmp_zs)
-!      deallocate(tmp_zb)
-!      deallocate(tmp_zc)
    end subroutine
-
+   
    !------------------------------------------------------------------------------
    !
    ! Purpose: some utilities for exceptions: SIG$FPE, SIG$ABORT, SIG$SEGV

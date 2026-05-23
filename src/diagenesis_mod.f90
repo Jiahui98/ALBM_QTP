@@ -453,8 +453,6 @@ contains
          m_frzCarbPool(:) = carbon * lagged_ice
          m_unfrzCarbPool(:) = carbon * (1.0 - lagged_ice)
       end if
-      m_frzCarbPool = carbon * lagged_ice
-      m_unfrzCarbPool = carbon * (1.0 - lagged_ice)
      ! deallocate(carbon)
    end subroutine
 

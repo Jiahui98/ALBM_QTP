@@ -169,7 +169,7 @@ contains
       do ii = 1, NSLAYER+1, 1             ! Sediment freezing
          if (ii == 1 .or. ii == 2) then
              unfrz = Porosity * 0.07 * abs(T0 - m_sedTemp(ii))**(-0.17)  
-             ! soil water can hardly freeze entirely. Here changed according to Yin et al., 2022; Yu, master thesis, 2019
+             ! soil water can hardly freeze entirely. Here changed according to Yin et al., 2022; Yu, master thesis, 2020
          else
              unfrz = Porosity * 0.12 * abs(T0 - m_sedTemp(ii))**(-0.15) 
          end if

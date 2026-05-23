@@ -323,18 +323,20 @@ contains
          dTtk = (Tbot - Ttop) / lake_info%hsed
          do ii = 1, NSLAYER+1, 1
             m_sedTemp(ii) = Ttop + dTtk * (m_Zs(ii)-m_Zs(1))
-            if (m_sedTemp(ii)<T0) then
-               if (ii==1 .or. ii==2) then
-                  m_sedIce(ii) = Porosity * (1-0.07*(T0 - m_sedTemp(ii))**(-0.17))
-               else
-                  m_sedIce(ii) = Porosity * (1-0.12*(T0 - m_sedTemp(ii))**(-0.15))
-               end if
-            else
-               m_sedIce(ii) = 0.0_r8
-            end if
          end do
       end if
 
+      do ii = 1, NSLAYER+1, 1
+         if (m_sedTemp(ii)<T0) then
+            if (ii==1 .or. ii==2) then
+               m_sedIce(ii) = Porosity * (1-0.07*(T0 - m_sedTemp(ii))**(-0.17))
+            else
+               m_sedIce(ii) = Porosity * (1-0.12*(T0 - m_sedTemp(ii))**(-0.15))
+            end if
+         else
+            m_sedIce(ii) = 0.0_r8
+         end if
+      end do
       ! construct ice profile
       !where (m_sedTemp<T0) 
       !   m_sedIce = Porosity
